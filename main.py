@@ -1,4 +1,4 @@
-from pyrogram import Client
+from pyrogram import Client, filters
 import asyncio
 import random
 import json
@@ -6,23 +6,24 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
+from keep_alive import keep_alive  # Keep alive system for Replit
 
 # === BOT CONFIG ===
 API_ID = 25424751
 API_HASH = "eecb6d1f5c01c2f54e5939827f30a19f"
 BOT_TOKEN = "8381754208:AAHO60W1yDa6hUMIsGxYjf_u2T8V-fJ4D6I"
 
-PRIVATE_CHANNEL_LINK = "https://t.me/+GEZvmdljbjNkZjk1"  # Your private channel (invite link)
-PUBLIC_CHANNEL_USERNAME = "@ARPmovie"  # Your public channel username
+PRIVATE_CHANNEL_LINK = "https://t.me/+GEZvmdljbjNkZjk1"  # Private channel invite link
+PUBLIC_CHANNEL_USERNAME = "@ARPmovie"  # Public channel username
 
 POSTS_PER_BATCH = 10
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 client = Client("auto_post_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
 POSTED_FILE = "posted.json"
 
 
+# ===================== Helper Functions =====================
 def load_posted():
     if os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "r") as f:
@@ -49,12 +50,10 @@ async def post_random_messages():
     posted_ids = [tuple(x) for x in posted_data.get("posted", [])]
 
     all_msgs = await get_all_messages()
-    all_ids = [(msg.chat.id, msg.message_id) for msg in all_msgs]
-
     remaining = [msg for msg in all_msgs if (msg.chat.id, msg.message_id) not in posted_ids]
 
     if not remaining:
-        print("✅ All posts have been sent once. Resetting cycle.")
+        print("✅ All posts sent once. Resetting cycle.")
         posted_data["posted"] = []
         remaining = all_msgs
 
@@ -75,16 +74,27 @@ async def post_random_messages():
     save_posted(posted_data)
 
 
-async def main():
-    await client.start()
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+# ===================== Commands =====================
+@client.on_message(filters.command("start") & filters.private)
+async def start_command(client, message):
+    await message.reply_text(
+        "✅ Bot chal raha hai!\n"
+        "⏰ Scheduled posts: 10:00 AM & 11:00 PM IST\n"
+        "📡 Source: Private channel se random 10 posts."
+    )
 
-    # Schedule jobs at 10:00 AM and 11:00 PM IST
+
+# ===================== Main =====================
+async def main():
+    keep_alive()  # Start keep-alive server for Replit
+    await client.start()
+    print("✅ Bot successfully started and scheduled jobs loaded!")
+
+    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(post_random_messages, "cron", hour=10, minute=0)
     scheduler.add_job(post_random_messages, "cron", hour=23, minute=0)
-
     scheduler.start()
-    print("🤖 Bot is running... Press Ctrl+C to stop.")
+
     await asyncio.Event().wait()
 
 
