@@ -84,6 +84,14 @@ async def start_command(client, message):
     )
 
 
+# === NEW COMMAND: Post now (manual trigger) ===
+@client.on_message(filters.command("postnow") & filters.private)
+async def postnow_command(client, message):
+    await message.reply_text("⏳ Abhi 10 random posts bheje ja rahe hain...")
+    await post_random_messages()
+    await message.reply_text("✅ Random 10 posts public channel me bhej diye gaye!")
+
+
 # ===================== Main =====================
 async def main():
     keep_alive()  # Start keep-alive server for Render
