@@ -13,7 +13,7 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-PRIVATE_CHANNEL_LINK = os.getenv("PRIVATE_CHANNEL_LINK")  # Numeric ID (example: -1001234567890)
+PRIVATE_CHANNEL_LINK = os.getenv("PRIVATE_CHANNEL_LINK")  # Example: https://t.me/+AbCdEfGhIjKlMnZp
 PUBLIC_CHANNEL_USERNAME = os.getenv("PUBLIC_CHANNEL_USERNAME")  # Example: @ARPmovie
 
 POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))  # Default 10
@@ -38,7 +38,7 @@ def save_posted(data):
 
 async def get_all_messages():
     all_msgs = []
-    chat = await client.get_chat(PRIVATE_CHANNEL_LINK)  # ✅ pehle channel connect
+    chat = await client.join_chat(PRIVATE_CHANNEL_LINK)  # ✅ invite link se join
     async for msg in client.get_chat_history(chat.id, limit=0):
         if msg.text or msg.photo or msg.video or msg.document:
             all_msgs.append(msg)
@@ -95,7 +95,7 @@ async def postnow_command(client, message):
 @client.on_message(filters.command("test") & filters.private)
 async def test_command(client, message):
     try:
-        chat = await client.get_chat(PRIVATE_CHANNEL_LINK)
+        chat = await client.join_chat(PRIVATE_CHANNEL_LINK)
         await message.reply_text(f"Channel mil gaya ✅\nID: {chat.id}\nTitle: {chat.title}")
     except Exception as e:
         await message.reply_text(f"❌ Error: {e}")
