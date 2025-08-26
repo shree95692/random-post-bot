@@ -6,17 +6,17 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
-from keep_alive import keep_alive  # Keep alive system for Replit
+from keep_alive import keep_alive  # Keep alive system for Replit/Render
 
-# === BOT CONFIG ===
-API_ID = 25424751
-API_HASH = "eecb6d1f5c01c2f54e5939827f30a19f"
-BOT_TOKEN = "8381754208:AAHO60W1yDa6hUMIsGxYjf_u2T8V-fJ4D6I"
+# === BOT CONFIG (Read from Environment Variables) ===
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-PRIVATE_CHANNEL_LINK = "https://t.me/+GEZvmdljbjNkZjk1"  # Private channel invite link
-PUBLIC_CHANNEL_USERNAME = "@ARPmovie"  # Public channel username
+PRIVATE_CHANNEL_LINK = os.getenv("PRIVATE_CHANNEL_LINK")  # Private channel invite link
+PUBLIC_CHANNEL_USERNAME = os.getenv("PUBLIC_CHANNEL_USERNAME")  # Public channel username
 
-POSTS_PER_BATCH = 10
+POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))  # Default 10 if not set
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 client = Client("auto_post_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -86,7 +86,7 @@ async def start_command(client, message):
 
 # ===================== Main =====================
 async def main():
-    keep_alive()  # Start keep-alive server for Replit
+    keep_alive()  # Start keep-alive server for Render
     await client.start()
     print("✅ Bot successfully started and scheduled jobs loaded!")
 
