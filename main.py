@@ -104,6 +104,22 @@ async def postnow_command(client, message):
     await message.reply_text("✅ Posts forward ho gaye!")
 
 
+# ===================== Test Command =====================
+@client.on_message(filters.command("test") & filters.private)
+async def test_command(client, message):
+    data = load_posted()
+    total_saved = len(data["all_posts"])
+    total_forwarded = len(data["forwarded"])
+
+    await message.reply_text(
+        "🧪 Test Report:\n"
+        f"📥 Saved posts in DB: {total_saved}\n"
+        f"📤 Already forwarded: {total_forwarded}\n"
+        f"📡 Private Channel ID: {PRIVATE_CHANNEL_ID}\n"
+        f"🌍 Public Channel ID: {PUBLIC_CHANNEL_ID}"
+    )
+
+
 # ===================== Main =====================
 async def main():
     keep_alive()  # keep alive for Render/Replit
