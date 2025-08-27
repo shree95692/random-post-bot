@@ -8,13 +8,14 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 from keep_alive import keep_alive  # For Render/Replit keep alive
 
-# === CONFIG from Environment Variables ===
+# === CONFIG ===
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-PRIVATE_CHANNEL_ID = int(os.getenv("PRIVATE_CHANNEL_ID"))  # numeric id (starts with -100)
-PUBLIC_CHANNEL_ID = int(os.getenv("PUBLIC_CHANNEL_ID"))    # numeric id (starts with -100)
+# Direct IDs (no need from env now)
+PRIVATE_CHANNEL_ID = -1002458215030   # Private channel ID
+PUBLIC_CHANNEL_ID = -1002469220850    # Public channel ID
 
 POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))  # Default 10 if not set
 TIMEZONE = pytz.timezone("Asia/Kolkata")
