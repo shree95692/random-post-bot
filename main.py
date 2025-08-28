@@ -135,7 +135,7 @@ def save_posted(data):
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
-    # Purana data (local + GitHub merged) load karo
+    # Local + GitHub merged data load karo
     data = load_posted()
 
     post_key = [message.chat.id, message.id]
@@ -143,12 +143,14 @@ async def save_new_post(client, message):
     if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
 
-        # Duplicate hatao (safety ke liye)
-        data["all_posts"] = [list(x) for x in {tuple(p) for p in data["all_posts"]}]
+        # Duplicate hatao (safety ke liye, tuple→list convert)
+        data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
         data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
 
         save_posted(data)
         print(f"💾 Saved new post {message.id} for scheduling")
+    else:
+        print(f"ℹ️ Post {message.id} already saved, skipping.")
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
