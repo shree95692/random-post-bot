@@ -48,31 +48,39 @@ def download_from_github():
     try:
         r = requests.get(url)
         if r.status_code == 200 and r.text.strip():
-            remote_data = json.loads(r.text)
+            try:
+                remote_data = json.loads(r.text)
+            except:
+                print("⚠️ Remote JSON invalid, skipping restore.")
+                return
 
-            # Agar local file already hai to merge karenge
+            # Agar local file hai to load karo
             local_data = {"all_posts": [], "forwarded": []}
             if os.path.exists(POSTED_FILE):
                 try:
                     with open(POSTED_FILE, "r") as f:
                         local_data = json.load(f)
                 except:
-                    pass
+                    print("⚠️ Local JSON invalid, using empty base.")
 
-            # Merge karna (duplicate avoid)
+            # Merge (duplicates avoid)
             merged = {
                 "all_posts": list({tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}),
                 "forwarded": list({tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))})
             }
 
-            # Wapas list of list banana (tuple → list)
+            # Tuple → list
             merged["all_posts"] = [list(x) for x in merged["all_posts"]]
             merged["forwarded"] = [list(x) for x in merged["forwarded"]]
+
+            # Agar remote empty aur local non-empty hai to local preserve karna
+            if not merged["all_posts"] and local_data["all_posts"]:
+                merged = local_data
 
             with open(POSTED_FILE, "w") as f:
                 json.dump(merged, f, indent=4)
 
-            print(f"✅ Database restored & merged from GitHub ({len(merged['all_posts'])} posts)")
+            print(f"✅ Database restored & merged ({len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded)")
         else:
             print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
