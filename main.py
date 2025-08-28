@@ -22,14 +22,24 @@ PUBLIC_CHANNEL_ID = -1002469220850    # Public channel ID
 # GitHub config
 GITHUB_REPO = "shree95692/random-forward-db"
 GITHUB_FILE = "posted.json"
-GITHUB_PAT = os.getenv("GITHUB_PAT")  # PAT ko env me hi rakho
+GITHUB_PAT = os.getenv("GITHUB_PAT")  # PAT env me rakho
 
 POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
-client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# Admin alerts
+ADMIN_ID = 5163916480  # tumhara Telegram ID
 
+client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 POSTED_FILE = "posted.json"
+
+
+# ===================== Alert Helper =====================
+async def send_alert(text):
+    try:
+        await client.send_message(ADMIN_ID, f"⚠️ ALERT:\n{text}")
+    except:
+        print("❌ Failed to send alert to admin")
 
 
 # ===================== GitHub Backup Helpers =====================
@@ -41,6 +51,8 @@ def download_from_github():
             with open(POSTED_FILE, "w") as f:
                 f.write(r.text)
             print("✅ Database restored from GitHub")
+        else:
+            print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
 
@@ -52,7 +64,6 @@ def upload_to_github():
         content = f.read()
     b64_content = base64.b64encode(content.encode()).decode()
 
-    # get sha
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
     headers = {"Authorization": f"token {GITHUB_PAT}"}
     sha = None
@@ -72,7 +83,9 @@ def upload_to_github():
     if r.status_code in [200, 201]:
         print("✅ Database backed up to GitHub")
     else:
-        print(f"❌ GitHub backup failed: {r.text}")
+        error_msg = f"❌ GitHub backup failed: {r.text}"
+        print(error_msg)
+        asyncio.create_task(send_alert(error_msg))
 
 
 # ===================== Local DB Helpers =====================
@@ -135,6 +148,7 @@ async def forward_scheduled_posts(user_id=None):
         except Exception as e:
             error_text = f"❌ Failed to forward message {msg_id}: {e}"
             print(error_text)
+            await send_alert(error_text)
             if user_id:
                 try:
                     await client.send_message(user_id, error_text)
