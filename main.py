@@ -48,9 +48,31 @@ def download_from_github():
     try:
         r = requests.get(url)
         if r.status_code == 200 and r.text.strip():
+            remote_data = json.loads(r.text)
+
+            # Agar local file already hai to merge karenge
+            local_data = {"all_posts": [], "forwarded": []}
+            if os.path.exists(POSTED_FILE):
+                try:
+                    with open(POSTED_FILE, "r") as f:
+                        local_data = json.load(f)
+                except:
+                    pass
+
+            # Merge karna (duplicate avoid)
+            merged = {
+                "all_posts": list({tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}),
+                "forwarded": list({tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))})
+            }
+
+            # Wapas list of list banana (tuple → list)
+            merged["all_posts"] = [list(x) for x in merged["all_posts"]]
+            merged["forwarded"] = [list(x) for x in merged["forwarded"]]
+
             with open(POSTED_FILE, "w") as f:
-                f.write(r.text)
-            print("✅ Database restored from GitHub")
+                json.dump(merged, f, indent=4)
+
+            print(f"✅ Database restored & merged from GitHub ({len(merged['all_posts'])} posts)")
         else:
             print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
@@ -105,14 +127,20 @@ def save_posted(data):
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
+    # Purana data (local + GitHub merged) load karo
     data = load_posted()
+
     post_key = [message.chat.id, message.id]
 
-    if post_key not in data["all_posts"]:
+    if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
+
+        # Duplicate hatao (safety ke liye)
+        data["all_posts"] = [list(x) for x in {tuple(p) for p in data["all_posts"]}]
+        data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+
         save_posted(data)
         print(f"💾 Saved new post {message.id} for scheduling")
-
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
