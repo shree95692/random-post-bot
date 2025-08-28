@@ -127,8 +127,14 @@ def load_posted():
 
 
 def save_posted(data):
+    # Safety: agar data khali hai to overwrite mat karo
+    if not data.get("all_posts") and not data.get("forwarded"):
+        print("⚠️ Empty DB, skipping GitHub backup.")
+        return
+
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f, indent=4)   # 👈 pretty format for readability
+        json.dump(data, f, indent=4)   # pretty JSON format
+
     upload_to_github()
 
 
