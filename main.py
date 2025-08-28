@@ -54,7 +54,7 @@ def download_from_github():
                 print("⚠️ Remote JSON invalid, skipping restore.")
                 return
 
-            # Agar local file hai to load karo
+            # Local data load
             local_data = {"all_posts": [], "forwarded": []}
             if os.path.exists(POSTED_FILE):
                 try:
@@ -63,29 +63,30 @@ def download_from_github():
                 except:
                     print("⚠️ Local JSON invalid, using empty base.")
 
-            # Merge (duplicates avoid)
+            # ✅ Merge karna (purana + naya, duplicate hata ke)
+            merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
+            merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
+
             merged = {
-                "all_posts": list({tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}),
-                "forwarded": list({tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))})
+                "all_posts": [list(x) for x in merged_all],
+                "forwarded": [list(x) for x in merged_forwarded]
             }
 
-            # Tuple → list
-            merged["all_posts"] = [list(x) for x in merged["all_posts"]]
-            merged["forwarded"] = [list(x) for x in merged["forwarded"]]
+            # ✅ Agar dono empty nahi hai to preserve
+            if not merged["all_posts"] and local_data.get("all_posts"):
+                merged["all_posts"] = local_data["all_posts"]
+            if not merged["forwarded"] and local_data.get("forwarded"):
+                merged["forwarded"] = local_data["forwarded"]
 
-            # Agar remote empty aur local non-empty hai to local preserve karna
-            if not merged["all_posts"] and local_data["all_posts"]:
-                merged = local_data
-
+            # Save final merged DB
             with open(POSTED_FILE, "w") as f:
                 json.dump(merged, f, indent=4)
 
-            print(f"✅ Database restored & merged ({len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded)")
+            print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
         else:
             print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
-
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
