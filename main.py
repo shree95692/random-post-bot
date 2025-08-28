@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
+import requests
 from keep_alive import keep_alive  # For Render/Replit keep alive
 
 # === CONFIG ===
@@ -13,11 +14,16 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Direct IDs (no need from env now)
+# Direct IDs
 PRIVATE_CHANNEL_ID = -1002458215030   # Private channel ID
 PUBLIC_CHANNEL_ID = -1002469220850    # Public channel ID
 
-POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))  # Default 10 if not set
+# GitHub config
+GITHUB_REPO = "shree95692/random-forward-db"
+GITHUB_FILE = "posted.json"
+GITHUB_PAT = os.getenv("GITHUB_PAT")  # PAT ko env me hi rakho
+
+POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -25,7 +31,50 @@ client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_t
 POSTED_FILE = "posted.json"
 
 
-# ===================== Helper Functions =====================
+# ===================== GitHub Backup Helpers =====================
+def download_from_github():
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
+    try:
+        r = requests.get(url)
+        if r.status_code == 200 and r.text.strip():
+            with open(POSTED_FILE, "w") as f:
+                f.write(r.text)
+            print("✅ Database restored from GitHub")
+    except Exception as e:
+        print(f"⚠️ Could not restore DB: {e}")
+
+
+def upload_to_github():
+    if not os.path.exists(POSTED_FILE):
+        return
+    with open(POSTED_FILE, "r") as f:
+        content = f.read()
+    b64_content = content.encode("utf-8")
+
+    # get sha
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
+    headers = {"Authorization": f"token {GITHUB_PAT}"}
+    sha = None
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200:
+        sha = r.json().get("sha")
+
+    data = {
+        "message": "Auto-backup posted.json",
+        "content": b64_content.decode("utf-8").encode("ascii", "ignore").decode(),
+        "branch": "main"
+    }
+    if sha:
+        data["sha"] = sha
+
+    r = requests.put(url, headers=headers, json=data)
+    if r.status_code in [200, 201]:
+        print("✅ Database backed up to GitHub")
+    else:
+        print(f"❌ GitHub backup failed: {r.text}")
+
+
+# ===================== Local DB Helpers =====================
 def load_posted():
     if os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "r") as f:
@@ -36,6 +85,7 @@ def load_posted():
 def save_posted(data):
     with open(POSTED_FILE, "w") as f:
         json.dump(data, f)
+    upload_to_github()
 
 
 # ===================== Event: Save new posts =====================
@@ -51,7 +101,7 @@ async def save_new_post(client, message):
 
 
 # ===================== Scheduled Forward =====================
-async def forward_scheduled_posts():
+async def forward_scheduled_posts(user_id=None):
     print(f"[{datetime.now()}] ⏳ Running scheduled forward job...")
     data = load_posted()
 
@@ -82,7 +132,13 @@ async def forward_scheduled_posts():
             data["forwarded"].append([chat_id, msg_id])
             print(f"✅ Forwarded message {msg_id}")
         except Exception as e:
-            print(f"❌ Failed to forward message {msg_id}: {e}")
+            error_text = f"❌ Failed to forward message {msg_id}: {e}"
+            print(error_text)
+            if user_id:
+                try:
+                    await client.send_message(user_id, error_text)
+                except:
+                    pass
 
     save_posted(data)
 
@@ -100,29 +156,25 @@ async def start_command(client, message):
 @client.on_message(filters.command("postnow") & filters.private)
 async def postnow_command(client, message):
     await message.reply_text("⏳ Abhi random posts forward ho rahe hain...")
-    await forward_scheduled_posts()
+    await forward_scheduled_posts(user_id=message.from_user.id)
     await message.reply_text("✅ Posts forward ho gaye!")
 
 
-# ===================== Test Command =====================
 @client.on_message(filters.command("test") & filters.private)
 async def test_command(client, message):
     data = load_posted()
-    total_saved = len(data["all_posts"])
-    total_forwarded = len(data["forwarded"])
-
     await message.reply_text(
-        "🧪 Test Report:\n"
-        f"📥 Saved posts in DB: {total_saved}\n"
-        f"📤 Already forwarded: {total_forwarded}\n"
-        f"📡 Private Channel ID: {PRIVATE_CHANNEL_ID}\n"
-        f"🌍 Public Channel ID: {PUBLIC_CHANNEL_ID}"
+        f"📊 Database Status:\n"
+        f"Total saved posts: {len(data['all_posts'])}\n"
+        f"Already forwarded: {len(data['forwarded'])}\n"
+        f"Remaining: {len([p for p in data['all_posts'] if p not in data['forwarded']])}"
     )
 
 
 # ===================== Main =====================
 async def main():
-    keep_alive()  # keep alive for Render/Replit
+    keep_alive()
+    download_from_github()
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
