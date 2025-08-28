@@ -3,6 +3,7 @@ import asyncio
 import random
 import json
 import os
+import base64
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
@@ -49,7 +50,7 @@ def upload_to_github():
         return
     with open(POSTED_FILE, "r") as f:
         content = f.read()
-    b64_content = content.encode("utf-8")
+    b64_content = base64.b64encode(content.encode()).decode()
 
     # get sha
     url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
@@ -61,7 +62,7 @@ def upload_to_github():
 
     data = {
         "message": "Auto-backup posted.json",
-        "content": b64_content.decode("utf-8").encode("ascii", "ignore").decode(),
+        "content": b64_content,
         "branch": "main"
     }
     if sha:
