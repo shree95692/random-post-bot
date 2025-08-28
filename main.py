@@ -98,7 +98,7 @@ def load_posted():
 
 def save_posted(data):
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f)
+        json.dump(data, f, indent=4)   # 👈 pretty format for readability
     upload_to_github()
 
 
