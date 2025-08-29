@@ -40,53 +40,29 @@ async def send_alert(text):
         print("❌ Failed to send alert to admin")
 
 # ===================== GitHub Helpers =====================
-def download_from_github():
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
+@app.on_message(filters.command("update_from_github") & filters.private)
+async def update_from_github_command(client, message: Message):
+    await message.reply_text("🔄 GitHub se database restore ho raha hai...")
     try:
-        r = requests.get(url, timeout=10)
-        print(f"🔎 Restore URL: {url} | Status: {r.status_code}")
-        if r.status_code != 200 or not r.text.strip():
-            print(f"⚠️ GitHub restore failed or empty content: {r.status_code}")
-            return
-
-        remote_data = json.loads(r.text)
-        def _normalize(lst):
-            out = []
-            if isinstance(lst, list):
-                for item in lst:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2:
-                        out.append([item[0], item[1]])
-            return out
-
-        remote_all = _normalize(remote_data.get("all_posts", []))
-        remote_forwarded = _normalize(remote_data.get("forwarded", []))
-
-        local_data = {"all_posts": [], "forwarded": []}
-        if os.path.exists(POSTED_FILE):
-            try:
-                with open(POSTED_FILE, "r") as f:
-                    local_data = json.load(f)
-            except:
-                print("⚠️ Local JSON invalid, using empty base")
-
-        local_all = _normalize(local_data.get("all_posts", []))
-        local_forwarded = _normalize(local_data.get("forwarded", []))
-
-        merged_all = list({tuple(x) for x in (remote_all + local_all)})
-        merged_forwarded = list({tuple(x) for x in (remote_forwarded + local_forwarded)})
-
-        merged = {
-            "all_posts": [list(x) for x in merged_all],
-            "forwarded": [list(x) for x in merged_forwarded]
-        }
-
-        with open(POSTED_FILE, "w") as f:
-            json.dump(merged, f, indent=4)
-
-        print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
-
+        restored_count = download_from_github()
+        size = os.path.getsize(POSTED_FILE) if os.path.exists(POSTED_FILE) else 0
+        txt = ""
+        try:
+            with open(POSTED_FILE, "r") as f:
+                txt = f.read()
+            data = json.loads(txt) if txt.strip() else {"all_posts": [], "forwarded": []}
+        except:
+            data = {"all_posts": [], "forwarded": []}
+        preview = (txt[:800].replace("\n", "\\n")) if txt else "(empty)"
+        await message.reply_text(
+            f"✅ Database updated from GitHub.\n"
+            f"Restored count(returned): {restored_count}\n"
+            f"Local file size: {size} bytes\n"
+            f"Total saved posts: {len(data.get('all_posts', []))}\n"
+            f"Already forwarded: {len(data.get('forwarded', []))}\n\nPreview: {preview}"
+        )
     except Exception as e:
-        print(f"⚠️ Could not restore DB: {e}")
+        await message.reply_text(f"❌ Error during update: {e}")
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
