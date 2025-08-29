@@ -27,7 +27,6 @@ POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 ADMIN_ID = 5163916480
-
 POSTED_FILE = "posted.json"
 
 app = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -40,65 +39,64 @@ async def send_alert(text):
         print("❌ Failed to send alert to admin")
 
 # ===================== GitHub Helpers =====================
-@app.on_message(filters.command("update_from_github") & filters.private)
-async def update_from_github_command(client, message: Message):
-    await message.reply_text("🔄 GitHub se database restore ho raha hai...")
+def download_from_github():
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
     try:
-        restored_count = download_from_github()
-        size = os.path.getsize(POSTED_FILE) if os.path.exists(POSTED_FILE) else 0
-        txt = ""
-        try:
-            with open(POSTED_FILE, "r") as f:
-                txt = f.read()
-            data = json.loads(txt) if txt.strip() else {"all_posts": [], "forwarded": []}
-        except:
-            data = {"all_posts": [], "forwarded": []}
-        preview = (txt[:800].replace("\n", "\\n")) if txt else "(empty)"
-        await message.reply_text(
-            f"✅ Database updated from GitHub.\n"
-            f"Restored count(returned): {restored_count}\n"
-            f"Local file size: {size} bytes\n"
-            f"Total saved posts: {len(data.get('all_posts', []))}\n"
-            f"Already forwarded: {len(data.get('forwarded', []))}\n\nPreview: {preview}"
-        )
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200 or not r.text.strip():
+            print(f"⚠️ GitHub restore failed or empty content | Status: {r.status_code}")
+            return 0
+        data = json.loads(r.text)
+        with open(POSTED_FILE, "w") as f:
+            json.dump(data, f, separators=(",", ":"))
+        print(f"✅ Database restored from GitHub, total posts: {len(data.get('all_posts', []))}")
+        return len(data.get('all_posts', []))
     except Exception as e:
-        await message.reply_text(f"❌ Error during update: {e}")
+        print(f"❌ Error restoring from GitHub: {e}")
+        return 0
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
         return
-    with open(POSTED_FILE, "r") as f:
-        content = f.read()
-    b64_content = base64.b64encode(content.encode()).decode()
+    try:
+        with open(POSTED_FILE, "r") as f:
+            content = f.read()
+        b64_content = base64.b64encode(content.encode()).decode()
 
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
-    headers = {"Authorization": f"token {GITHUB_PAT}"}
-    sha = None
-    r = requests.get(url, headers=headers)
-    if r.status_code == 200:
-        sha = r.json().get("sha")
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
+        headers = {"Authorization": f"token {GITHUB_PAT}"}
+        sha = None
+        r = requests.get(url, headers=headers)
+        if r.status_code == 200:
+            sha = r.json().get("sha")
 
-    data = {
-        "message": "Auto-backup posted.json",
-        "content": b64_content,
-        "branch": "main"
-    }
-    if sha:
-        data["sha"] = sha
+        data = {
+            "message": "Auto-backup posted.json",
+            "content": b64_content,
+            "branch": "main"
+        }
+        if sha:
+            data["sha"] = sha
 
-    r = requests.put(url, headers=headers, json=data)
-    if r.status_code in [200, 201]:
-        print("✅ Database backed up to GitHub")
-    else:
-        error_msg = f"❌ GitHub backup failed: {r.text}"
-        print(error_msg)
-        asyncio.create_task(send_alert(error_msg))
+        r = requests.put(url, headers=headers, json=data)
+        if r.status_code in [200, 201]:
+            print("✅ Database backed up to GitHub")
+        else:
+            error_msg = f"❌ GitHub backup failed: {r.text}"
+            print(error_msg)
+            asyncio.create_task(send_alert(error_msg))
+    except Exception as e:
+        print(f"❌ GitHub backup exception: {e}")
+        asyncio.create_task(send_alert(str(e)))
 
 # ===================== Local DB =====================
 def load_posted():
     if os.path.exists(POSTED_FILE):
-        with open(POSTED_FILE, "r") as f:
-            return json.load(f)
+        try:
+            with open(POSTED_FILE, "r") as f:
+                return json.load(f)
+        except:
+            return {"all_posts": [], "forwarded": []}
     return {"all_posts": [], "forwarded": []}
 
 def save_posted(data):
@@ -150,12 +148,16 @@ async def handle_deleted_messages(client, messages):
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
-    print(f"[{datetime.now()}] ⏳ Running scheduled forward job...")
+    print(f"[{datetime.now(TIMEZONE)}] ⏳ Running scheduled forward job...")
     data = load_posted()
     all_posts = data["all_posts"]
     forwarded = data["forwarded"]
-    remaining = [p for p in all_posts if p not in forwarded]
 
+    if not all_posts:
+        print("⚠️ No posts to forward.")
+        return
+
+    remaining = [p for p in all_posts if p not in forwarded]
     if not remaining:
         data["forwarded"] = []
         save_posted(data)
@@ -177,8 +179,6 @@ async def forward_scheduled_posts(user_id=None):
     save_posted(data)
 
 # ===================== Commands =====================
-from pyrogram.types import Message
-
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client, message: Message):
     await message.reply_text(
@@ -203,13 +203,12 @@ async def test_command(client, message: Message):
         f"Remaining: {len([p for p in data['all_posts'] if p not in data['forwarded']])}"
     )
 
-# ===================== New Command: Update from GitHub =====================
 @app.on_message(filters.command("update_from_github") & filters.private)
 async def update_from_github_command(client, message: Message):
     await message.reply_text("🔄 GitHub se database restore ho raha hai...")
     try:
-        download_from_github()  # Tumhara existing restore function call
-        await message.reply_text("✅ Database successfully restored from GitHub!")
+        restored = download_from_github()
+        await message.reply_text(f"✅ Database restored from GitHub! Total posts: {restored}")
     except Exception as e:
         await message.reply_text(f"❌ Restore failed: {e}")
 
@@ -227,4 +226,5 @@ async def main():
 
     await asyncio.Event().wait()
 
-app.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
