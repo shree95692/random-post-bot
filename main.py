@@ -163,16 +163,37 @@ def load_posted():
 
 
 def save_posted(data):
-    # Safety: agar data khali hai to overwrite mat karo
+    # Safety: agar data bilkul hi empty hai to backup mat karo
     if not data.get("all_posts") and not data.get("forwarded"):
         print("⚠️ Empty DB, skipping GitHub backup.")
         return
 
+    # 🔹 Purana data load karo taaki merge ho jaye
+    old_data = {}
+    if os.path.exists(POSTED_FILE):
+        try:
+            with open(POSTED_FILE, "r") as f:
+                old_data = json.load(f)
+        except Exception as e:
+            print("⚠️ Error reading old POSTED_FILE:", e)
+
+    # 🔹 Merge karo old + new (duplicates hata ke)
+    merged = {
+        "all_posts": list({tuple(x) for x in old_data.get("all_posts", []) + data.get("all_posts", [])}),
+        "forwarded": list({tuple(x) for x in old_data.get("forwarded", []) + data.get("forwarded", [])})
+    }
+
+    # 🔹 Set ko list of list me wapas convert karo
+    merged["all_posts"] = [list(x) for x in merged["all_posts"]]
+    merged["forwarded"] = [list(x) for x in merged["forwarded"]]
+
+    # 🔹 Compact JSON format me save karo
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f, indent=4)   # pretty JSON format
+        json.dump(merged, f, separators=(",", ":"))
 
+    # 🔹 GitHub pe upload karo
     upload_to_github()
-
+    print("✅ DB merged & saved, total posts:", len(merged["all_posts"]))
 
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
