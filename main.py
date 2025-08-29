@@ -174,7 +174,16 @@ async def save_new_post(client, message):
 
 
 # ===================== Event: Delete posts =====================
-@client.on_message(filters.chat(PRIVATE_CHANNEL_ID) & filters.deleted)
+@client.on_message_deleted()
+async def deleted_post_handler(client, messages):
+    data = load_posted()
+    for message in messages:
+        to_remove = [p for p in data.get("all_posts", []) if p[0] == message.chat.id and p[1] == message.id]
+        if to_remove:
+            for p in to_remove:
+                data["all_posts"].remove(p)
+            save_posted(data)
+            print(f"🗑️ Deleted post {message.id} removed from DB")
 async def deleted_post_handler(client, message):
     data = load_posted()
     to_remove = [p for p in data.get("all_posts", []) if p[0] == message.chat.id and p[1] == message.id]
