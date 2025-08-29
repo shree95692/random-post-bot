@@ -377,8 +377,14 @@ async def update_from_github_command(c, message):
 
 
 # ===================== Main =====================
+from pyrogram import idle
+import logging
+
+logging.basicConfig(level=logging.INFO)  # optional, debug logs console me
+
+# ===================== Main =====================
 async def main():
-    # start keep-alive (Flask or similar)
+    # start keep-alive
     keep_alive()
 
     # Try restore first (merge remote + local)
@@ -394,10 +400,18 @@ async def main():
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # keep running
-    await asyncio.Event().wait()
+    # --- Debug handler: temporary, will log all private messages ---
+    @client.on_message(filters.private)
+    async def _debug_private_messages(c, m):
+        try:
+            user = m.from_user.id if m.from_user else "unknown"
+            text = m.text or m.caption or "<non-text>"
+            print(f"🔍 DEBUG incoming private message from {user}: {text[:200]}")
+        except Exception as e:
+            print("DEBUG handler error:", e)
 
+    # keep running using pyrogram idle
+    await idle()
 
 if __name__ == "__main__":
-    # Use asyncio.run to run the async main (safe for Render/Replit)
     asyncio.run(main())
