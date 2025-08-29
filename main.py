@@ -201,6 +201,8 @@ async def forward_scheduled_posts(user_id=None):
     save_posted(data)
 
 # ===================== Commands =====================
+from pyrogram.types import Message
+
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client, message: Message):
     await message.reply_text(
@@ -224,6 +226,16 @@ async def test_command(client, message: Message):
         f"Already forwarded: {len(data['forwarded'])}\n"
         f"Remaining: {len([p for p in data['all_posts'] if p not in data['forwarded']])}"
     )
+
+# ===================== New Command: Update from GitHub =====================
+@app.on_message(filters.command("update_from_github") & filters.private)
+async def update_from_github_command(client, message: Message):
+    await message.reply_text("🔄 GitHub se database restore ho raha hai...")
+    try:
+        download_from_github()  # Tumhara existing restore function call
+        await message.reply_text("✅ Database successfully restored from GitHub!")
+    except Exception as e:
+        await message.reply_text(f"❌ Restore failed: {e}")
 
 # ===================== Main =====================
 async def main():
