@@ -255,7 +255,8 @@ async def main():
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    await client.idle()
+    # ✅ Pyrogram v2 fix
+    await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
