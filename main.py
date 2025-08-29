@@ -260,8 +260,6 @@ async def main():
         with open(POSTED_FILE, "w") as f:
             json.dump({"all_posts": [], "forwarded": []}, f)
 
-    # ✅ Client start
-    await client.start()
     print("✅ Bot started and scheduler loaded!")
 
     # ✅ Scheduler jobs
@@ -270,8 +268,8 @@ async def main():
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # ✅ Infinite wait
     await asyncio.Event().wait()
 
 
-client.run(main())
+if __name__ == "__main__":
+    client.run(main())
