@@ -36,215 +36,121 @@ POSTED_FILE = "posted.json"
 
 # ===================== Alert Helper =====================
 async def send_alert(text):
-    """Send alert to admin (async)."""
     try:
         await client.send_message(ADMIN_ID, f"⚠️ ALERT:\n{text}")
-    except Exception as e:
-        print("❌ Failed to send alert to admin:", e)
-
-
-def _schedule_alert(text):
-    """
-    Schedule an async alert from sync context safely.
-    If event loop not running, just print.
-    """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop and loop.is_running():
-            loop.create_task(send_alert(text))
-        else:
-            print("ALERT (no running loop):", text)
-    except Exception as e:
-        print("ALERT scheduling failed:", e)
+    except:
+        print("❌ Failed to send alert to admin")
 
 
 # ===================== GitHub Backup Helpers =====================
 def download_from_github():
-    """
-    Restore posted.json from GitHub and merge with local file.
-    Keeps format: {"all_posts":[[chat,msg],...],"forwarded":[[chat,msg],...]}
-    """
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
     try:
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200 or not r.text.strip():
-            print(f"⚠️ GitHub restore failed or empty content | Status: {r.status_code}")
-            return 0
-
-        try:
-            remote_data = json.loads(r.text)
-        except Exception as e:
-            print("⚠️ Remote JSON invalid, skipping restore:", e)
-            return 0
-
-        # Ensure structure
-        remote_all = remote_data.get("all_posts", []) or []
-        remote_forwarded = remote_data.get("forwarded", []) or []
-
-        # Load local data if present
-        local_data = {"all_posts": [], "forwarded": []}
-        if os.path.exists(POSTED_FILE):
+        r = requests.get(url)
+        if r.status_code == 200 and r.text.strip():
             try:
-                with open(POSTED_FILE, "r") as f:
-                    local_data = json.load(f)
-            except Exception as e:
-                print("⚠️ Local JSON invalid, using empty base:", e)
+                remote_data = json.loads(r.text)
+            except:
+                print("⚠️ Remote JSON invalid, skipping restore.")
+                return
 
-        local_all = local_data.get("all_posts", []) or []
-        local_forwarded = local_data.get("forwarded", []) or []
+            # Local data load
+            local_data = {"all_posts": [], "forwarded": []}
+            if os.path.exists(POSTED_FILE):
+                try:
+                    with open(POSTED_FILE, "r") as f:
+                        local_data = json.load(f)
+                except:
+                    print("⚠️ Local JSON invalid, using empty base.")
 
-        # Merge using set of tuples to avoid duplicates and ensure lists of lists in final JSON
-        merged_all_set = {tuple(x) for x in local_all + remote_all}
-        merged_forwarded_set = {tuple(x) for x in local_forwarded + remote_forwarded}
+            # ✅ Merge karna (purana + naya, duplicate hata ke)
+            merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
+            merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
 
-        merged = {
-            "all_posts": [list(x) for x in merged_all_set],
-            "forwarded": [list(x) for x in merged_forwarded_set]
-        }
+            merged = {
+                "all_posts": [list(x) for x in merged_all],
+                "forwarded": [list(x) for x in merged_forwarded]
+            }
 
-        # If merged ends up empty but local had data, preserve local
-        if not merged["all_posts"] and local_all:
-            merged["all_posts"] = local_all
-        if not merged["forwarded"] and local_forwarded:
-            merged["forwarded"] = local_forwarded
+            # ✅ Agar dono empty nahi hai to preserve
+            if not merged["all_posts"] and local_data.get("all_posts"):
+                merged["all_posts"] = local_data["all_posts"]
+            if not merged["forwarded"] and local_data.get("forwarded"):
+                merged["forwarded"] = local_data["forwarded"]
 
-        # Save final merged DB (pretty for humans)
-        with open(POSTED_FILE, "w") as f:
-            json.dump(merged, f, indent=4)
+            # Save final merged DB
+            with open(POSTED_FILE, "w") as f:
+                json.dump(merged, f, indent=4)
 
-        print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
-        return len(merged["all_posts"])
+            print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
+        else:
+            print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
-        return 0
-
 
 def upload_to_github():
-    """
-    Upload local POSTED_FILE to GitHub repo (base64 content). Non-blocking alert on failure.
-    """
     if not os.path.exists(POSTED_FILE):
-        print("⚠️ No local DB to upload.")
         return
+    with open(POSTED_FILE, "r") as f:
+        content = f.read()
+    b64_content = base64.b64encode(content.encode()).decode()
 
-    try:
-        with open(POSTED_FILE, "r") as f:
-            content = f.read()
-    except Exception as e:
-        print("❌ Failed to read POSTED_FILE for upload:", e)
-        return
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
+    headers = {"Authorization": f"token {GITHUB_PAT}"}
+    sha = None
+    r = requests.get(url, headers=headers)
+    if r.status_code == 200:
+        sha = r.json().get("sha")
 
-    try:
-        b64_content = base64.b64encode(content.encode()).decode()
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}"
-        headers = {"Authorization": f"token {GITHUB_PAT}"} if GITHUB_PAT else {}
-        sha = None
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200:
-            try:
-                sha = r.json().get("sha")
-            except:
-                sha = None
+    data = {
+        "message": "Auto-backup posted.json",
+        "content": b64_content,
+        "branch": "main"
+    }
+    if sha:
+        data["sha"] = sha
 
-        data = {
-            "message": "Auto-backup posted.json",
-            "content": b64_content,
-            "branch": "main"
-        }
-        if sha:
-            data["sha"] = sha
-
-        r = requests.put(url, headers=headers, json=data, timeout=15)
-        if r.status_code in [200, 201]:
-            print("✅ Database backed up to GitHub")
-        else:
-            error_msg = f"❌ GitHub backup failed (status {r.status_code}): {r.text}"
-            print(error_msg)
-            _schedule_alert(error_msg)
-    except Exception as e:
-        error_msg = f"❌ GitHub backup exception: {e}"
+    r = requests.put(url, headers=headers, json=data)
+    if r.status_code in [200, 201]:
+        print("✅ Database backed up to GitHub")
+    else:
+        error_msg = f"❌ GitHub backup failed: {r.text}"
         print(error_msg)
-        _schedule_alert(error_msg)
+        asyncio.create_task(send_alert(error_msg))
 
 
 # ===================== Local DB Helpers =====================
 def load_posted():
-    """Load local posted.json safely, return canonical structure."""
     if os.path.exists(POSTED_FILE):
-        try:
-            with open(POSTED_FILE, "r") as f:
-                data = json.load(f)
-            # Normalize keys
-            all_posts = data.get("all_posts", []) or []
-            forwarded = data.get("forwarded", []) or []
-            # Ensure inner items are lists of two values (chat_id, msg_id)
-            normalized_all = []
-            for item in all_posts:
-                try:
-                    normalized_all.append([int(item[0]), int(item[1])])
-                except:
-                    continue
-            normalized_forwarded = []
-            for item in forwarded:
-                try:
-                    normalized_forwarded.append([int(item[0]), int(item[1])])
-                except:
-                    continue
-            return {"all_posts": normalized_all, "forwarded": normalized_forwarded}
-        except Exception as e:
-            print("⚠️ Failed to parse POSTED_FILE, returning empty DB:", e)
-            return {"all_posts": [], "forwarded": []}
+        with open(POSTED_FILE, "r") as f:
+            return json.load(f)
     return {"all_posts": [], "forwarded": []}
 
 
 def save_posted(data):
-    """
-    Merge with existing local DB (to avoid accidental overwrite) and save in canonical format.
-    Then upload to GitHub.
-    """
-    if not isinstance(data, dict):
-        print("⚠️ save_posted expects dict, got:", type(data))
+    # Safety: agar data khali hai to overwrite mat karo
+    if not data.get("all_posts") and not data.get("forwarded"):
+        print("⚠️ Empty DB, skipping GitHub backup.")
         return
 
-    old = load_posted()
-    # merge sets
-    merged_all = {tuple(x) for x in old.get("all_posts", []) + data.get("all_posts", [])}
-    merged_forwarded = {tuple(x) for x in old.get("forwarded", []) + data.get("forwarded", [])}
+    with open(POSTED_FILE, "w") as f:
+        json.dump(data, f, indent=4)   # pretty JSON format
 
-    final = {
-        "all_posts": [list(x) for x in merged_all],
-        "forwarded": [list(x) for x in merged_forwarded]
-    }
-
-    # Save locally
-    try:
-        with open(POSTED_FILE, "w") as f:
-            json.dump(final, f, indent=4)
-        print(f"💾 DB saved locally. Total posts: {len(final['all_posts'])}")
-    except Exception as e:
-        print("❌ Failed to save POSTED_FILE:", e)
-        return
-
-    # Upload to GitHub (best-effort)
-    try:
-        upload_to_github()
-    except Exception as e:
-        print("❌ upload_to_github failed:", e)
+    upload_to_github()
 
 
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
-async def save_new_post_handler(c, message):
-    """
-    Save every new message from private channel into local DB (format preserved).
-    """
+async def save_new_post(client, message):
+    # Local + GitHub merged data load karo
     data = load_posted()
+
     post_key = [message.chat.id, message.id]
 
     if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
 
-        # Remove duplicates and normalize
+        # Duplicate hatao (safety ke liye, tuple→list convert)
         data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
         data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
 
@@ -253,45 +159,13 @@ async def save_new_post_handler(c, message):
     else:
         print(f"ℹ️ Post {message.id} already saved, skipping.")
 
-
-# ===================== Event: Deleted Post Handler =====================
-@client.on_deleted_messages()
-async def handle_deleted_messages(c, messages):
-    """
-    When messages are deleted from the source channel, remove only those entries
-    from DB (keep other duplicates intact).
-    """
-    if not messages:
-        return
-    data = load_posted()
-    changed = False
-    for msg in messages:
-        try:
-            key = [msg.chat.id, msg.id]
-            if key in data.get("all_posts", []):
-                data["all_posts"].remove(key)
-                changed = True
-                print(f"❌ Removed deleted post {msg.id} from DB")
-            if key in data.get("forwarded", []):
-                data["forwarded"].remove(key)
-        except Exception as e:
-            print("⚠️ Error processing deleted message:", e)
-    if changed:
-        save_posted(data)
-
-
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
-    now = datetime.now(TIMEZONE)
-    print(f"[{now.strftime('%Y-%m-%d %H:%M:%S %Z')}] ⏳ Running scheduled forward job...")
+    print(f"[{datetime.now()}] ⏳ Running scheduled forward job...")
     data = load_posted()
-    all_posts = data.get("all_posts", []) or []
-    already_forwarded = data.get("forwarded", []) or []
 
-    # If no posts at all, nothing to do
-    if not all_posts:
-        print("⚠️ No posts to forward.")
-        return
+    all_posts = data["all_posts"]
+    already_forwarded = data["forwarded"]
 
     remaining = [post for post in all_posts if post not in already_forwarded]
 
@@ -302,45 +176,36 @@ async def forward_scheduled_posts(user_id=None):
         remaining = all_posts
 
     if not remaining:
-        print("⚠️ No posts available to forward after reset.")
+        print("⚠️ No posts available to forward yet.")
         return
 
-    count = min(POSTS_PER_BATCH, len(remaining))
-    try:
-        selected = random.sample(remaining, count)
-    except Exception as e:
-        print("❌ random.sample failed:", e)
-        selected = remaining[:count]
+    selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
 
-    for item in selected:
+    for chat_id, msg_id in selected:
         try:
-            chat_id, msg_id = int(item[0]), int(item[1])
-            # use copy_message (recommended) to preserve original
             await client.copy_message(
                 chat_id=PUBLIC_CHANNEL_ID,
                 from_chat_id=chat_id,
                 message_id=msg_id
             )
-            # append and dedupe forwarded list
             data["forwarded"].append([chat_id, msg_id])
-            data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
             print(f"✅ Forwarded message {msg_id}")
         except Exception as e:
-            error_text = f"❌ Failed to forward message {item}: {e}"
+            error_text = f"❌ Failed to forward message {msg_id}: {e}"
             print(error_text)
-            try:
-                _schedule_alert(error_text)
-                if user_id:
+            await send_alert(error_text)
+            if user_id:
+                try:
                     await client.send_message(user_id, error_text)
-            except:
-                pass
+                except:
+                    pass
 
     save_posted(data)
 
 
 # ===================== Commands =====================
 @client.on_message(filters.command("start") & filters.private)
-async def start_command(c, message):
+async def start_command(client, message):
     await message.reply_text(
         "✅ Bot chal raha hai!\n"
         f"⏰ Scheduled: {POSTS_PER_BATCH} posts at 10:00 AM & 11:00 PM IST\n"
@@ -349,14 +214,14 @@ async def start_command(c, message):
 
 
 @client.on_message(filters.command("postnow") & filters.private)
-async def postnow_command(c, message):
+async def postnow_command(client, message):
     await message.reply_text("⏳ Abhi random posts forward ho rahe hain...")
     await forward_scheduled_posts(user_id=message.from_user.id)
     await message.reply_text("✅ Posts forward ho gaye!")
 
 
 @client.on_message(filters.command("test") & filters.private)
-async def test_command(c, message):
+async def test_command(client, message):
     data = load_posted()
     await message.reply_text(
         f"📊 Database Status:\n"
@@ -366,52 +231,19 @@ async def test_command(c, message):
     )
 
 
-@client.on_message(filters.command("update_from_github") & filters.private)
-async def update_from_github_command(c, message):
-    await message.reply_text("🔄 GitHub se database restore ho raha hai...")
-    try:
-        restored = download_from_github()
-        await message.reply_text(f"✅ Database restored from GitHub! Total posts: {restored}")
-    except Exception as e:
-        await message.reply_text(f"❌ Restore failed: {e}")
-
-
-# ===================== Main =====================
-from pyrogram import idle
-import logging
-
-logging.basicConfig(level=logging.INFO)  # optional, debug logs console me
-
 # ===================== Main =====================
 async def main():
-    # start keep-alive
     keep_alive()
-
-    # Try restore first (merge remote + local)
     download_from_github()
-
-    # Start client
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
-    # Scheduler (IST)
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # --- Debug handler: temporary, will log all private messages ---
-    @client.on_message(filters.private)
-    async def _debug_private_messages(c, m):
-        try:
-            user = m.from_user.id if m.from_user else "unknown"
-            text = m.text or m.caption or "<non-text>"
-            print(f"🔍 DEBUG incoming private message from {user}: {text[:200]}")
-        except Exception as e:
-            print("DEBUG handler error:", e)
+    await asyncio.Event().wait()
 
-    # keep running using pyrogram idle
-    await idle()
 
-if __name__ == "__main__":
-    asyncio.run(main())
+client.run(main())
