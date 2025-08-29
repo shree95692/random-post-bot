@@ -153,18 +153,21 @@ async def delete_post(client, messages):
     removed = False
 
     for msg in messages:
-        post_key = [msg.chat.id, msg.id]
-        if post_key in data.get("all_posts", []):
-            data["all_posts"].remove(post_key)
+        key = [msg.chat.id, msg.id]
+        # remove once if present
+        if key in data.get("all_posts", []):
+            data["all_posts"].remove(key)
             removed = True
-        if post_key in data.get("forwarded", []):
-            data["forwarded"].remove(post_key)
+        if key in data.get("forwarded", []):
+            data["forwarded"].remove(key)
             removed = True
 
     if removed:
         save_posted(data)
-        print(f"🗑️ Deleted posts removed from DB: {[m.id for m in messages]}")
-
+        try:
+            print(f"🗑️ Deleted posts removed from DB: {[m.id for m in messages]}")
+        except:
+            print("🗑️ Deleted posts removed from DB.")
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
