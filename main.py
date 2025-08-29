@@ -113,7 +113,7 @@ def upload_to_github():
     else:
         error_msg = f"❌ GitHub backup failed: {r.text}"
         print(error_msg)
-        asyncio.create_task(send_alert(error_msg))
+        # ⚠️ async call hata diya, warna runtime loop error aata
 
 
 # ===================== Local DB Helpers =====================
@@ -168,6 +168,7 @@ async def delete_post(client, messages):
             print(f"🗑️ Deleted posts removed from DB: {[m.id for m in messages]}")
         except:
             print("🗑️ Deleted posts removed from DB.")
+
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
