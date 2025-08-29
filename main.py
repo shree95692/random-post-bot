@@ -42,7 +42,7 @@ async def send_alert(text):
         print("❌ Failed to send alert to admin")
 
 
-# ===================== GitHub Restore =====================
+# ===================== GitHub Backup Helpers =====================
 def download_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
     try:
@@ -63,14 +63,20 @@ def download_from_github():
                 except:
                     print("⚠️ Local JSON invalid, using empty base.")
 
-            # ✅ Merge (local + remote)
-            merged_all = {tuple(x) for x in (remote_data.get("all_posts", []) + local_data.get("all_posts", []))}
-            merged_forwarded = {tuple(x) for x in (remote_data.get("forwarded", []) + local_data.get("forwarded", []))}
+            # ✅ Merge karna (purana + naya, duplicate hata ke)
+            merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
+            merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
 
             merged = {
                 "all_posts": [list(x) for x in merged_all],
                 "forwarded": [list(x) for x in merged_forwarded]
             }
+
+            # ✅ Agar dono empty nahi hai to preserve
+            if not merged["all_posts"] and local_data.get("all_posts"):
+                merged["all_posts"] = local_data["all_posts"]
+            if not merged["forwarded"] and local_data.get("forwarded"):
+                merged["forwarded"] = local_data["forwarded"]
 
             # Save final merged DB
             with open(POSTED_FILE, "w") as f:
@@ -81,30 +87,6 @@ def download_from_github():
             print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
-
-
-# ===================== Main =====================
-async def main():
-    keep_alive()
-
-    # ✅ Pehle DB restore karo
-    download_from_github()
-
-    # ✅ Client ko start karo
-    await client.start()
-    print("✅ Bot started and scheduler loaded!")
-
-    # ✅ Scheduler jobs
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-    scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
-    scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
-    scheduler.start()
-
-    # ✅ Infinite wait
-    await asyncio.Event().wait()
-
-
-client.run(main())
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
