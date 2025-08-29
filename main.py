@@ -46,48 +46,83 @@ async def send_alert(text):
 def download_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
     try:
-        r = requests.get(url)
-        if r.status_code == 200 and r.text.strip():
+        r = requests.get(url, timeout=10)
+        print(f"🔎 Restore URL: {url} | Status: {r.status_code}")
+
+        if r.status_code != 200:
+            print(f"⚠️ GitHub restore failed: HTTP {r.status_code}")
+            return
+
+        if not r.text or not r.text.strip():
+            print("⚠️ GitHub returned empty content.")
+            return
+
+        # Try parse remote JSON
+        try:
+            remote_data = json.loads(r.text)
+        except Exception as e:
+            # Show a bit of the content to help debug
+            preview = (r.text[:200] + "...") if len(r.text) > 200 else r.text
+            print(f"❌ Remote JSON invalid: {e}\nPreview: {preview}")
+            return
+
+        # Helper: normalize and validate list entries (expecting [chat_id, msg_id] style)
+        def _normalize_list(lst, src_name="remote"):
+            out = []
+            if not isinstance(lst, list):
+                print(f"⚠️ {src_name} value is not a list, skipping.")
+                return out
+            for item in lst:
+                # Accept lists or tuples with at least two elements
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    out.append([item[0], item[1]])
+                else:
+                    print(f"⚠️ Skipping invalid entry in {src_name}: {item}")
+            return out
+
+        remote_all = _normalize_list(remote_data.get("all_posts", []), "remote.all_posts")
+        remote_forwarded = _normalize_list(remote_data.get("forwarded", []), "remote.forwarded")
+
+        # Load local data (if exists)
+        local_data = {"all_posts": [], "forwarded": []}
+        if os.path.exists(POSTED_FILE):
             try:
-                remote_data = json.loads(r.text)
-            except:
-                print("⚠️ Remote JSON invalid, skipping restore.")
-                return
+                with open(POSTED_FILE, "r") as f:
+                    local_data = json.load(f)
+                print(f"ℹ️ Local file found: {len(local_data.get('all_posts', []))} posts, "
+                      f"{len(local_data.get('forwarded', []))} forwarded")
+            except Exception as e:
+                print(f"⚠️ Local JSON invalid/unreadable: {e}. Using empty local base.")
 
-            # Local data load
-            local_data = {"all_posts": [], "forwarded": []}
-            if os.path.exists(POSTED_FILE):
-                try:
-                    with open(POSTED_FILE, "r") as f:
-                        local_data = json.load(f)
-                except:
-                    print("⚠️ Local JSON invalid, using empty base.")
+        local_all = _normalize_list(local_data.get("all_posts", []), "local.all_posts")
+        local_forwarded = _normalize_list(local_data.get("forwarded", []), "local.forwarded")
 
-            # ✅ Merge karna (purana + naya, duplicate hata ke)
-            merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
-            merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
+        # Merge: remote first (priority), then local; use set to deduplicate
+        merged_all_set = {tuple(x) for x in (remote_all + local_all)}
+        merged_forwarded_set = {tuple(x) for x in (remote_forwarded + local_forwarded)}
 
-            merged = {
-                "all_posts": [list(x) for x in merged_all],
-                "forwarded": [list(x) for x in merged_forwarded]
-            }
+        merged = {
+            "all_posts": [list(x) for x in merged_all_set],
+            "forwarded": [list(x) for x in merged_forwarded_set]
+        }
 
-            # ✅ Agar dono empty nahi hai to preserve
-            if not merged["all_posts"] and local_data.get("all_posts"):
-                merged["all_posts"] = local_data["all_posts"]
-            if not merged["forwarded"] and local_data.get("forwarded"):
-                merged["forwarded"] = local_data["forwarded"]
+        # If merge ended up empty but local had data, preserve local (safety)
+        if not merged["all_posts"] and local_all:
+            merged["all_posts"] = local_all
+            print("ℹ️ Remote had no valid all_posts; preserving local all_posts.")
+        if not merged["forwarded"] and local_forwarded:
+            merged["forwarded"] = local_forwarded
+            print("ℹ️ Remote had no valid forwarded; preserving local forwarded.")
 
-            # Save final merged DB
-            with open(POSTED_FILE, "w") as f:
-                json.dump(merged, f, indent=4)
+        # Save final merged DB
+        with open(POSTED_FILE, "w") as f:
+            json.dump(merged, f, indent=4)
 
-            print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
-        else:
-            print(f"⚠️ GitHub restore failed: {r.status_code}")
+        print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
+
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
-
+        
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
         return
