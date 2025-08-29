@@ -243,19 +243,29 @@ async def main():
     keep_alive()
     download_from_github()
 
+    # Ensure local DB file exists (even if GitHub is 404)
     if not os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "w") as f:
             json.dump({"all_posts": [], "forwarded": []}, f)
 
+    # Start bot
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
+    # IMPORTANT: disable webhook so polling receives updates
+    try:
+        await client.delete_webhook(drop_pending_updates=False)
+        print("🧹 Webhook cleared (polling enabled).")
+    except Exception as e:
+        print(f"⚠️ Could not delete webhook: {e}")
+
+    # Scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # ✅ Idle loop (replace idle())
+    # Keep the process alive for handlers
     await asyncio.Event().wait()
 
 
