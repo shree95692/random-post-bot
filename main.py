@@ -252,15 +252,24 @@ async def test_command(client, message):
 # ===================== Main =====================
 async def main():
     keep_alive()
+
+    # ✅ Pehle DB restore karo aur confirm karo ki POSTED_FILE ready hai
     download_from_github()
+    if not os.path.exists(POSTED_FILE):
+        with open(POSTED_FILE, "w") as f:
+            json.dump({"all_posts": [], "forwarded": []}, f)
+
+    # ✅ Client start
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
+    # ✅ Scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
+    # ✅ Infinite wait
     await asyncio.Event().wait()
 
 
