@@ -1,4 +1,5 @@
 from pyrogram import Client, filters
+from pyrogram.types import Message
 import asyncio
 import random
 import json
@@ -83,29 +84,7 @@ def download_from_github():
         print(f"⚠️ Could not restore DB: {e}")
 
 
-# ===================== Main =====================
-async def main():
-    keep_alive()
-
-    # ✅ Pehle DB restore karo
-    download_from_github()
-
-    # ✅ Client ko start karo
-    await client.start()
-    print("✅ Bot started and scheduler loaded!")
-
-    # ✅ Scheduler jobs
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-    scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
-    scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
-    scheduler.start()
-
-    # ✅ Infinite wait
-    await asyncio.Event().wait()
-
-
-client.run(main())
-
+# ===================== GitHub Upload =====================
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
         return
@@ -146,38 +125,47 @@ def load_posted():
 
 
 def save_posted(data):
-    # Safety: agar data khali hai to overwrite mat karo
     if not data.get("all_posts") and not data.get("forwarded"):
         print("⚠️ Empty DB, skipping GitHub backup.")
         return
-
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f, indent=4)   # pretty JSON format
-
+        json.dump(data, f, indent=4)
     upload_to_github()
 
 
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
-async def save_new_post(client, message):
-    # ✅ Always restore merged data (local + GitHub)
-    download_from_github()
+async def save_new_post(client, message: Message):
     data = load_posted()
-
     post_key = [message.chat.id, message.id]
 
     if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
-
-        # ✅ Duplicate remove (tuple → list)
-        data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
-        data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
-
+        data["all_posts"] = [list(x) for x in {tuple(p) for p in data["all_posts"]}]
         save_posted(data)
         print(f"💾 Saved new post {message.id} for scheduling")
-    else:
-        print(f"ℹ️ Post {message.id} already saved, skipping.")
-        
+
+
+# ===================== Event: Delete post =====================
+@client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
+async def delete_post(client, messages):
+    data = load_posted()
+    removed = False
+
+    for msg in messages:
+        post_key = [msg.chat.id, msg.id]
+        if post_key in data.get("all_posts", []):
+            data["all_posts"].remove(post_key)
+            removed = True
+        if post_key in data.get("forwarded", []):
+            data["forwarded"].remove(post_key)
+            removed = True
+
+    if removed:
+        save_posted(data)
+        print(f"🗑️ Deleted posts removed from DB: {[m.id for m in messages]}")
+
+
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
     print(f"[{datetime.now()}] ⏳ Running scheduled forward job...")
@@ -224,7 +212,7 @@ async def forward_scheduled_posts(user_id=None):
 
 # ===================== Commands =====================
 @client.on_message(filters.command("start") & filters.private)
-async def start_command(client, message):
+async def start_command(client, message: Message):
     await message.reply_text(
         "✅ Bot chal raha hai!\n"
         f"⏰ Scheduled: {POSTS_PER_BATCH} posts at 10:00 AM & 11:00 PM IST\n"
@@ -233,14 +221,14 @@ async def start_command(client, message):
 
 
 @client.on_message(filters.command("postnow") & filters.private)
-async def postnow_command(client, message):
+async def postnow_command(client, message: Message):
     await message.reply_text("⏳ Abhi random posts forward ho rahe hain...")
     await forward_scheduled_posts(user_id=message.from_user.id)
     await message.reply_text("✅ Posts forward ho gaye!")
 
 
 @client.on_message(filters.command("test") & filters.private)
-async def test_command(client, message):
+async def test_command(client, message: Message):
     data = load_posted()
     await message.reply_text(
         f"📊 Database Status:\n"
@@ -253,24 +241,20 @@ async def test_command(client, message):
 # ===================== Main =====================
 async def main():
     keep_alive()
-
-    # ✅ Pehle DB restore karo aur confirm karo ki POSTED_FILE ready hai
     download_from_github()
+
     if not os.path.exists(POSTED_FILE):
         with open(POSTED_FILE, "w") as f:
             json.dump({"all_posts": [], "forwarded": []}, f)
 
-    # ✅ Pyrogram client ko start karo
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
-    # ✅ Scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # ✅ Idle mode taaki commands aur events chalte rahe
     await client.idle()
 
 
