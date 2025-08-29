@@ -1,5 +1,4 @@
 from pyrogram import Client, filters
-from pyrogram.types import Message
 import asyncio
 import random
 import json
@@ -43,7 +42,7 @@ async def send_alert(text):
         print("❌ Failed to send alert to admin")
 
 
-# ===================== GitHub Restore =====================
+# ===================== GitHub Backup Helpers =====================
 def download_from_github():
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
     try:
@@ -64,14 +63,20 @@ def download_from_github():
                 except:
                     print("⚠️ Local JSON invalid, using empty base.")
 
-            # ✅ Merge (local + remote)
-            merged_all = {tuple(x) for x in (remote_data.get("all_posts", []) + local_data.get("all_posts", []))}
-            merged_forwarded = {tuple(x) for x in (remote_data.get("forwarded", []) + local_data.get("forwarded", []))}
+            # ✅ Merge karna (purana + naya, duplicate hata ke)
+            merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
+            merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
 
             merged = {
                 "all_posts": [list(x) for x in merged_all],
                 "forwarded": [list(x) for x in merged_forwarded]
             }
+
+            # ✅ Agar dono empty nahi hai to preserve
+            if not merged["all_posts"] and local_data.get("all_posts"):
+                merged["all_posts"] = local_data["all_posts"]
+            if not merged["forwarded"] and local_data.get("forwarded"):
+                merged["forwarded"] = local_data["forwarded"]
 
             # Save final merged DB
             with open(POSTED_FILE, "w") as f:
@@ -83,8 +88,6 @@ def download_from_github():
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
 
-
-# ===================== GitHub Upload =====================
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
         return
@@ -113,7 +116,7 @@ def upload_to_github():
     else:
         error_msg = f"❌ GitHub backup failed: {r.text}"
         print(error_msg)
-        # ⚠️ async call hata diya, warna runtime loop error aata
+        asyncio.create_task(send_alert(error_msg))
 
 
 # ===================== Local DB Helpers =====================
@@ -125,50 +128,36 @@ def load_posted():
 
 
 def save_posted(data):
+    # Safety: agar data khali hai to overwrite mat karo
     if not data.get("all_posts") and not data.get("forwarded"):
         print("⚠️ Empty DB, skipping GitHub backup.")
         return
+
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4)   # pretty JSON format
+
     upload_to_github()
 
 
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
-async def save_new_post(client, message: Message):
+async def save_new_post(client, message):
+    # Local + GitHub merged data load karo
     data = load_posted()
+
     post_key = [message.chat.id, message.id]
 
     if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
-        data["all_posts"] = [list(x) for x in {tuple(p) for p in data["all_posts"]}]
+
+        # Duplicate hatao (safety ke liye, tuple→list convert)
+        data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
+        data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+
         save_posted(data)
         print(f"💾 Saved new post {message.id} for scheduling")
-
-
-# ===================== Event: Delete post =====================
-@client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
-async def delete_post(client, messages):
-    data = load_posted()
-    removed = False
-
-    for msg in messages:
-        key = [msg.chat.id, msg.id]
-        # remove once if present
-        if key in data.get("all_posts", []):
-            data["all_posts"].remove(key)
-            removed = True
-        if key in data.get("forwarded", []):
-            data["forwarded"].remove(key)
-            removed = True
-
-    if removed:
-        save_posted(data)
-        try:
-            print(f"🗑️ Deleted posts removed from DB: {[m.id for m in messages]}")
-        except:
-            print("🗑️ Deleted posts removed from DB.")
-
+    else:
+        print(f"ℹ️ Post {message.id} already saved, skipping.")
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
@@ -216,7 +205,7 @@ async def forward_scheduled_posts(user_id=None):
 
 # ===================== Commands =====================
 @client.on_message(filters.command("start") & filters.private)
-async def start_command(client, message: Message):
+async def start_command(client, message):
     await message.reply_text(
         "✅ Bot chal raha hai!\n"
         f"⏰ Scheduled: {POSTS_PER_BATCH} posts at 10:00 AM & 11:00 PM IST\n"
@@ -225,14 +214,14 @@ async def start_command(client, message: Message):
 
 
 @client.on_message(filters.command("postnow") & filters.private)
-async def postnow_command(client, message: Message):
+async def postnow_command(client, message):
     await message.reply_text("⏳ Abhi random posts forward ho rahe hain...")
     await forward_scheduled_posts(user_id=message.from_user.id)
     await message.reply_text("✅ Posts forward ho gaye!")
 
 
 @client.on_message(filters.command("test") & filters.private)
-async def test_command(client, message: Message):
+async def test_command(client, message):
     data = load_posted()
     await message.reply_text(
         f"📊 Database Status:\n"
@@ -246,32 +235,15 @@ async def test_command(client, message: Message):
 async def main():
     keep_alive()
     download_from_github()
-
-    # Ensure local DB file exists (even if GitHub is 404)
-    if not os.path.exists(POSTED_FILE):
-        with open(POSTED_FILE, "w") as f:
-            json.dump({"all_posts": [], "forwarded": []}, f)
-
-    # Start bot
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
-    # IMPORTANT: disable webhook so polling receives updates
-    try:
-        await client.delete_webhook(drop_pending_updates=False)
-        print("🧹 Webhook cleared (polling enabled).")
-    except Exception as e:
-        print(f"⚠️ Could not delete webhook: {e}")
-
-    # Scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # Keep the process alive for handlers
     await asyncio.Event().wait()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+client.run(main())
