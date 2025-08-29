@@ -260,7 +260,7 @@ async def main():
         with open(POSTED_FILE, "w") as f:
             json.dump({"all_posts": [], "forwarded": []}, f)
 
-    # ✅ Client start yahan karo
+    # ✅ Pyrogram client ko start karo
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
@@ -270,7 +270,7 @@ async def main():
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
-    # ✅ Idle loop (wait for events/commands)
+    # ✅ Idle mode taaki commands aur events chalte rahe
     await client.idle()
 
 
