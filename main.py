@@ -233,8 +233,7 @@ async def test_command(client, message):
 
 # ===================== Main =====================
 async def main():
-    keep_alive()
-    download_from_github()
+    download_from_github()   # 🔹 Restore first
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
@@ -246,4 +245,6 @@ async def main():
     await asyncio.Event().wait()
 
 
-client.run(main())
+if __name__ == "__main__":
+    keep_alive()             # 🔹 Flask server start outside
+    client.run(main)         # 🔹 Run bot correctly
