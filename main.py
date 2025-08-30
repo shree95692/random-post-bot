@@ -155,10 +155,14 @@ def save_posted(data):
     upload_to_github()
 
 
-# ===================== Reliable Queue Save + Delete Handler =====================
+# ===================== Reliable Queue Save + Delete Handler + Cleanup =====================
 import asyncio
+
 db_lock = asyncio.Lock()
 save_queue = asyncio.Queue()
+pending_set = set()   # posts queued but not yet flushed (tuples)
+seen_posts = set()    # posts already persisted (tuples)
+
 
 async def queue_worker():
     """Continuously drain queue and write batches atomically to file (safe + fast)."""
@@ -176,23 +180,33 @@ async def queue_worker():
             except asyncio.TimeoutError:
                 pass
 
+            # convert to list of tuples (safety)
+            batch = [tuple(x) if isinstance(x, list) else x for x in batch]
+
             # write batch under lock
             async with db_lock:
                 data = load_posted()
                 changed = False
                 for post_key in batch:
-                    if post_key not in data.get("all_posts", []):
-                        data["all_posts"].append(post_key)
+                    if post_key not in seen_posts:
+                        # append as list for JSON
+                        data["all_posts"].append([post_key[0], post_key[1]])
+                        seen_posts.add(post_key)
                         changed = True
 
                 if changed:
-                    # dedupe
+                    # dedupe (safety)
                     data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
                     data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
                     save_posted(data)
                     print(f"💾 Saved batch of {len(batch)} posts to DB")
                 else:
                     print("ℹ️ Batch processed but no new posts to save")
+
+            # remove items from pending_set after flushing
+            for pk in batch:
+                pending_set.discard(tuple(pk))
+
         except Exception as e:
             print(f"❌ queue_worker error: {e}")
             await asyncio.sleep(1)
@@ -201,14 +215,18 @@ async def queue_worker():
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
     """Just enqueue incoming posts — worker will persist them."""
-    post_key = [message.chat.id, message.id]
+    post_key = (message.chat.id, message.id)
 
-    # quick duplicate skip (optional)
-    data = load_posted()
-    if post_key in data.get("all_posts", []):
+    # fast in-memory checks to avoid disk I/O and duplicate enqueue
+    if post_key in seen_posts:
         print(f"ℹ️ Post {message.id} already in DB, skipping enqueue.")
         return
+    if post_key in pending_set:
+        print(f"ℹ️ Post {message.id} already queued, skipping duplicate.")
+        return
 
+    # enqueue
+    pending_set.add(post_key)
     await save_queue.put(post_key)
     print(f"📥 Enqueued new post {message.id}")
 
@@ -216,19 +234,79 @@ async def save_new_post(client, message):
 # ===================== Delete Handler =====================
 @client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
 async def delete_post_handler(client, messages):
+    """Try to remove deleted messages from DB when Telegram sends delete events."""
     async with db_lock:
         data = load_posted()
         removed = 0
         for msg in messages:
             post_key = [msg.chat.id, msg.id]
+            tkey = (msg.chat.id, msg.id)
             if post_key in data.get("all_posts", []):
                 data["all_posts"].remove(post_key)
                 removed += 1
             if post_key in data.get("forwarded", []):
                 data["forwarded"].remove(post_key)
+            # also update in-memory sets
+            seen_posts.discard(tkey)
+            pending_set.discard(tkey)
+
         if removed > 0:
             save_posted(data)
             print(f"🗑️ Removed {removed} deleted posts from DB")
+
+
+# ===================== Periodic cleanup (fallback) =====================
+async def cleanup_missing_posts(interval_minutes: int = 10):
+    """
+    Periodically verify saved posts still exist in source private channel.
+    Removes missing ones from DB to avoid repeated forwarding failures.
+    """
+    await asyncio.sleep(5)  # small delay on startup
+    while True:
+        try:
+            async with db_lock:
+                data = load_posted()
+                all_posts_copy = list(data.get("all_posts", []))
+            removed_total = 0
+
+            # iterate and check each message
+            for idx, (chat_id, msg_id) in enumerate(all_posts_copy):
+                try:
+                    # attempt to fetch message; returns Message or None
+                    msg = await client.get_messages(chat_id, msg_id)
+                except Exception as e:
+                    # treat as missing/inaccessible
+                    msg = None
+                    print(f"⚠️ get_messages error for {msg_id}: {e}")
+
+                if not msg:
+                    async with db_lock:
+                        data = load_posted()
+                        key = [chat_id, msg_id]
+                        if key in data.get("all_posts", []):
+                            data["all_posts"].remove(key)
+                            if key in data.get("forwarded", []):
+                                data["forwarded"].remove(key)
+                            save_posted(data)
+                            removed_total += 1
+                            seen_posts.discard((chat_id, msg_id))
+                            pending_set.discard((chat_id, msg_id))
+                            print(f"🗑️ cleanup: Removed missing post {msg_id} from DB")
+
+                # throttle small amount to avoid rate-limit bursts
+                if (idx + 1) % 50 == 0:
+                    await asyncio.sleep(0.5)
+
+            if removed_total:
+                print(f"🧹 Cleanup done, removed {removed_total} missing posts.")
+            else:
+                print("🧹 Cleanup done, no missing posts found.")
+
+        except Exception as e:
+            print(f"❌ cleanup_missing_posts error: {e}")
+
+        # sleep until next run
+        await asyncio.sleep(interval_minutes * 60)
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
