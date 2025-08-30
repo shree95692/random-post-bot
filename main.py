@@ -226,8 +226,8 @@ async def test_command(client, message):
 
 # ===================== Main =====================
 async def main():
-    keep_alive()
     download_from_github()
+    await client.start()
     print("✅ Bot started and scheduler loaded!")
 
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
@@ -239,4 +239,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    client.run()
+    from keep_alive import keep_alive
+    keep_alive()   # Flask server background me start hoga
+    client.run(main)
