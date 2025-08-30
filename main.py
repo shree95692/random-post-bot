@@ -22,13 +22,13 @@ PUBLIC_CHANNEL_ID = -1002469220850    # Public channel ID
 # GitHub config
 GITHUB_REPO = "shree95692/random-forward-db"
 GITHUB_FILE = "posted.json"
-GITHUB_PAT = os.getenv("GITHUB_PAT")
+GITHUB_PAT = os.getenv("GITHUB_PAT")  # PAT env me rakho
 
 POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 # Admin alerts
-ADMIN_ID = 5163916480
+ADMIN_ID = 5163916480  # tumhara Telegram ID
 
 client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 POSTED_FILE = "posted.json"
@@ -63,7 +63,7 @@ def download_from_github():
                 except:
                     print("⚠️ Local JSON invalid, using empty base.")
 
-            # ✅ Merge (local + remote, duplicates hatake)
+            # ✅ Merge karna (purana + naya, duplicate hata ke)
             merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
             merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
 
@@ -72,10 +72,11 @@ def download_from_github():
                 "forwarded": [list(x) for x in merged_forwarded]
             }
 
-            # ✅ Overwrite protection: agar dono empty hai to skip
-            if not merged["all_posts"] and not merged["forwarded"]:
-                print("⚠️ Remote + local empty, skipping overwrite.")
-                return
+            # ✅ Agar dono empty nahi hai to preserve
+            if not merged["all_posts"] and local_data.get("all_posts"):
+                merged["all_posts"] = local_data["all_posts"]
+            if not merged["forwarded"] and local_data.get("forwarded"):
+                merged["forwarded"] = local_data["forwarded"]
 
             # Save final merged DB
             with open(POSTED_FILE, "w") as f:
@@ -86,7 +87,6 @@ def download_from_github():
             print(f"⚠️ GitHub restore failed: {r.status_code}")
     except Exception as e:
         print(f"⚠️ Could not restore DB: {e}")
-
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
@@ -128,29 +128,36 @@ def load_posted():
 
 
 def save_posted(data):
+    # Safety: agar data khali hai to overwrite mat karo
     if not data.get("all_posts") and not data.get("forwarded"):
         print("⚠️ Empty DB, skipping GitHub backup.")
         return
+
     with open(POSTED_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4)   # pretty JSON format
+
     upload_to_github()
 
 
 # ===================== Event: Save new posts =====================
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
+    # Local + GitHub merged data load karo
     data = load_posted()
+
     post_key = [message.chat.id, message.id]
 
     if post_key not in data.get("all_posts", []):
         data["all_posts"].append(post_key)
+
+        # Duplicate hatao (safety ke liye, tuple→list convert)
         data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
         data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+
         save_posted(data)
         print(f"💾 Saved new post {message.id} for scheduling")
     else:
         print(f"ℹ️ Post {message.id} already saved, skipping.")
-
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
@@ -226,6 +233,7 @@ async def test_command(client, message):
 
 # ===================== Main =====================
 async def main():
+    keep_alive()
     download_from_github()
     await client.start()
     print("✅ Bot started and scheduler loaded!")
@@ -238,7 +246,4 @@ async def main():
     await asyncio.Event().wait()
 
 
-if __name__ == "__main__":
-    from keep_alive import keep_alive
-    keep_alive()   # Flask server background me start hoga
-    client.run(main)
+client.run(main())
