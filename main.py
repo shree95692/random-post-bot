@@ -239,4 +239,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    client.run(main())
+    client.run()
