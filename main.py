@@ -155,42 +155,80 @@ def save_posted(data):
     upload_to_github()
 
 
-# ===================== Bulk Save Optimization =====================
-pending_posts = []
-is_saving = False
+# ===================== Reliable Queue Save + Delete Handler =====================
+import asyncio
+db_lock = asyncio.Lock()
+save_queue = asyncio.Queue()
 
-async def flush_pending_posts():
-    global pending_posts, is_saving
-    if is_saving or not pending_posts:
-        return
-    is_saving = True
+async def queue_worker():
+    """Continuously drain queue and write batches atomically to file (safe + fast)."""
+    while True:
+        try:
+            # wait for at least one item
+            item = await save_queue.get()
+            batch = [item]
 
-    data = load_posted()
-    for post_key in pending_posts:
-        if post_key not in data.get("all_posts", []):
-            data["all_posts"].append(post_key)
+            # collect more quickly (0.5s window) to form a batch
+            try:
+                while True:
+                    more = await asyncio.wait_for(save_queue.get(), timeout=0.5)
+                    batch.append(more)
+            except asyncio.TimeoutError:
+                pass
 
-    # Duplicate clean
-    data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
-    data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+            # write batch under lock
+            async with db_lock:
+                data = load_posted()
+                changed = False
+                for post_key in batch:
+                    if post_key not in data.get("all_posts", []):
+                        data["all_posts"].append(post_key)
+                        changed = True
 
-    save_posted(data)
-    print(f"💾 Flushed {len(pending_posts)} posts to DB")
-    pending_posts = []
-    is_saving = False
+                if changed:
+                    # dedupe
+                    data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
+                    data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+                    save_posted(data)
+                    print(f"💾 Saved batch of {len(batch)} posts to DB")
+                else:
+                    print("ℹ️ Batch processed but no new posts to save")
+        except Exception as e:
+            print(f"❌ queue_worker error: {e}")
+            await asyncio.sleep(1)
 
 
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
-    global pending_posts
+    """Just enqueue incoming posts — worker will persist them."""
     post_key = [message.chat.id, message.id]
 
-    if post_key not in pending_posts:
-        pending_posts.append(post_key)
-        print(f"📥 Queued new post {message.id}")
+    # quick duplicate skip (optional)
+    data = load_posted()
+    if post_key in data.get("all_posts", []):
+        print(f"ℹ️ Post {message.id} already in DB, skipping enqueue.")
+        return
 
-    # Schedule flush after short delay
-    asyncio.get_event_loop().call_later(2, lambda: asyncio.create_task(flush_pending_posts()))
+    await save_queue.put(post_key)
+    print(f"📥 Enqueued new post {message.id}")
+
+
+# ===================== Delete Handler =====================
+@client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
+async def delete_post_handler(client, messages):
+    async with db_lock:
+        data = load_posted()
+        removed = 0
+        for msg in messages:
+            post_key = [msg.chat.id, msg.id]
+            if post_key in data.get("all_posts", []):
+                data["all_posts"].remove(post_key)
+                removed += 1
+            if post_key in data.get("forwarded", []):
+                data["forwarded"].remove(post_key)
+        if removed > 0:
+            save_posted(data)
+            print(f"🗑️ Removed {removed} deleted posts from DB")
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
@@ -284,8 +322,10 @@ async def main():
     keep_alive()
     download_from_github()
     await client.start()
+    # start queue worker
+    asyncio.create_task(queue_worker())
     print("✅ Bot started and scheduler loaded!")
-
+    ...
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
