@@ -399,17 +399,43 @@ async def restore_command(client, message):
 async def main():
     keep_alive()
     download_from_github()
+
+    # ensure local DB exists (if GitHub 404)
+    if not os.path.exists(POSTED_FILE):
+        with open(POSTED_FILE, "w") as f:
+            json.dump({"all_posts": [], "forwarded": []}, f)
+
+    # initialize in-memory sets from restored DB
+    data = load_posted()
+    seen_posts.clear()
+    seen_posts.update({tuple(x) for x in data.get("all_posts", [])})
+    pending_set.clear()
+
+    # start pyrogram client
     await client.start()
-    # start queue worker
+
+    # ensure webhook cleared so polling receives updates (helpful on Render)
+    try:
+        await client.delete_webhook(drop_pending_updates=False)
+        print("🧹 Webhook cleared (polling enabled).")
+    except Exception as e:
+        print(f"⚠️ Could not delete webhook: {e}")
+
+    # start background workers
     asyncio.create_task(queue_worker())
+    asyncio.create_task(cleanup_missing_posts())   # runs every 10 minutes by default
+
     print("✅ Bot started and scheduler loaded!")
-    ...
+
+    # scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
+    # keep process alive for handlers & workers
     await asyncio.Event().wait()
 
 
-client.run(main())
+if __name__ == "__main__":
+    client.run(main())
