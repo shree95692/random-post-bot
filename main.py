@@ -155,25 +155,42 @@ def save_posted(data):
     upload_to_github()
 
 
-# ===================== Event: Save new posts =====================
+# ===================== Bulk Save Optimization =====================
+pending_posts = []
+is_saving = False
+
+async def flush_pending_posts():
+    global pending_posts, is_saving
+    if is_saving or not pending_posts:
+        return
+    is_saving = True
+
+    data = load_posted()
+    for post_key in pending_posts:
+        if post_key not in data.get("all_posts", []):
+            data["all_posts"].append(post_key)
+
+    # Duplicate clean
+    data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
+    data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+
+    save_posted(data)
+    print(f"💾 Flushed {len(pending_posts)} posts to DB")
+    pending_posts = []
+    is_saving = False
+
+
 @client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
 async def save_new_post(client, message):
-    # Local + GitHub merged data load karo
-    data = load_posted()
-
+    global pending_posts
     post_key = [message.chat.id, message.id]
 
-    if post_key not in data.get("all_posts", []):
-        data["all_posts"].append(post_key)
+    if post_key not in pending_posts:
+        pending_posts.append(post_key)
+        print(f"📥 Queued new post {message.id}")
 
-        # Duplicate hatao (safety ke liye, tuple→list convert)
-        data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
-        data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
-
-        save_posted(data)
-        print(f"💾 Saved new post {message.id} for scheduling")
-    else:
-        print(f"ℹ️ Post {message.id} already saved, skipping.")
+    # Schedule flush after short delay
+    asyncio.get_event_loop().call_later(2, lambda: asyncio.create_task(flush_pending_posts()))
 
 # ===================== Scheduled Forward =====================
 async def forward_scheduled_posts(user_id=None):
