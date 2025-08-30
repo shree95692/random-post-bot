@@ -231,9 +231,25 @@ async def test_command(client, message):
     )
 
 
+# ===================== NEW: Manual Restore Command =====================
+@client.on_message(filters.command("restore") & filters.private)
+async def restore_command(client, message):
+    try:
+        download_from_github()
+        data = load_posted()
+        if data.get("all_posts") or data.get("forwarded"):
+            await message.reply_text(f"✅ Backup restored successfully!\n"
+                                     f"Total saved posts: {len(data['all_posts'])}\n"
+                                     f"Already forwarded: {len(data['forwarded'])}")
+        else:
+            await message.reply_text("⚠️ Restore attempted but database is empty.")
+    except Exception as e:
+        await message.reply_text(f"❌ Restore failed: {e}")
+
 # ===================== Main =====================
 async def main():
-    download_from_github()   # 🔹 Restore first
+    keep_alive()
+    download_from_github()
     await client.start()
     print("✅ Bot started and scheduler loaded!")
 
@@ -245,6 +261,4 @@ async def main():
     await asyncio.Event().wait()
 
 
-if __name__ == "__main__":
-    keep_alive()
-    asyncio.run(main())         # 🔹 Run bot correctly
+client.run(main())
