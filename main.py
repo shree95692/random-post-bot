@@ -246,5 +246,5 @@ async def main():
 
 
 if __name__ == "__main__":
-    keep_alive()             # 🔹 Flask server start outside
-    client.run(main)         # 🔹 Run bot correctly
+    keep_alive()
+    asyncio.run(main())         # 🔹 Run bot correctly
