@@ -44,26 +44,41 @@ async def send_alert(text):
 
 # ===================== GitHub Backup Helpers =====================
 def download_from_github():
-    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/{GITHUB_FILE}"
+    """
+    Uses GitHub API (with PAT if present) to fetch posted.json (works for private repos).
+    Merges remote + local DB and writes posted.json
+    """
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_FILE}?ref=main"
+    headers = {}
+    pat = os.getenv("GITHUB_PAT")
+    if pat:
+        headers["Authorization"] = f"token {pat}"
+
     try:
-        r = requests.get(url)
-        if r.status_code == 200 and r.text.strip():
+        r = requests.get(api_url, headers=headers, timeout=15)
+        if r.status_code == 200:
+            js = r.json()
+            if "content" not in js:
+                print("⚠️ GitHub API returned no content field.")
+                return
+            # content is base64 encoded
             try:
-                remote_data = json.loads(r.text)
-            except:
-                print("⚠️ Remote JSON invalid, skipping restore.")
+                remote_text = base64.b64decode(js["content"]).decode("utf-8")
+                remote_data = json.loads(remote_text)
+            except Exception as e:
+                print(f"⚠️ Failed to decode remote JSON: {e}")
                 return
 
-            # Local data load
+            # load local if exists
             local_data = {"all_posts": [], "forwarded": []}
             if os.path.exists(POSTED_FILE):
                 try:
                     with open(POSTED_FILE, "r") as f:
                         local_data = json.load(f)
-                except:
-                    print("⚠️ Local JSON invalid, using empty base.")
+                except Exception as e:
+                    print(f"⚠️ Local JSON invalid, ignoring local: {e}")
 
-            # ✅ Merge karna (purana + naya, duplicate hata ke)
+            # merge sets to avoid duplicates
             merged_all = {tuple(x) for x in (local_data.get("all_posts", []) + remote_data.get("all_posts", []))}
             merged_forwarded = {tuple(x) for x in (local_data.get("forwarded", []) + remote_data.get("forwarded", []))}
 
@@ -72,21 +87,22 @@ def download_from_github():
                 "forwarded": [list(x) for x in merged_forwarded]
             }
 
-            # ✅ Agar dono empty nahi hai to preserve
+            # safety: if merge empty but local has data, preserve local
             if not merged["all_posts"] and local_data.get("all_posts"):
                 merged["all_posts"] = local_data["all_posts"]
             if not merged["forwarded"] and local_data.get("forwarded"):
                 merged["forwarded"] = local_data["forwarded"]
 
-            # Save final merged DB
             with open(POSTED_FILE, "w") as f:
                 json.dump(merged, f, indent=4)
 
-            print(f"✅ Database restored & merged: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
+            print(f"✅ Database restored & merged from GitHub: {len(merged['all_posts'])} posts, {len(merged['forwarded'])} forwarded")
+        elif r.status_code == 404:
+            print("⚠️ GitHub file not found (404). Repo/file/branch wrong or private without PAT.")
         else:
-            print(f"⚠️ GitHub restore failed: {r.status_code}")
+            print(f"⚠️ GitHub API error: {r.status_code} -> {r.text[:200]}")
     except Exception as e:
-        print(f"⚠️ Could not restore DB: {e}")
+        print(f"⚠️ Could not restore DB (request error): {e}")
 
 def upload_to_github():
     if not os.path.exists(POSTED_FILE):
