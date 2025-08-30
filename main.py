@@ -255,11 +255,12 @@ async def delete_post_handler(client, messages):
             print(f"🗑️ Removed {removed} deleted posts from DB")
 
 
-# ===================== Periodic cleanup (fallback) =====================
+# ===================== Periodic cleanup (safe mode) =====================
 async def cleanup_missing_posts(interval_minutes: int = 10):
     """
     Periodically verify saved posts still exist in source private channel.
-    Removes missing ones from DB to avoid repeated forwarding failures.
+    Removes only truly missing ones from DB.
+    Skips deletion if access error (Peer id invalid / channel private).
     """
     await asyncio.sleep(5)  # small delay on startup
     while True:
@@ -274,26 +275,30 @@ async def cleanup_missing_posts(interval_minutes: int = 10):
                 try:
                     # attempt to fetch message; returns Message or None
                     msg = await client.get_messages(chat_id, msg_id)
+                    if not msg:
+                        raise ValueError("Message not found")
                 except Exception as e:
-                    # treat as missing/inaccessible
-                    msg = None
-                    print(f"⚠️ get_messages error for {msg_id}: {e}")
+                    err = str(e)
+                    if "Peer id invalid" in err or "CHANNEL_PRIVATE" in err:
+                        # 🔹 skip deletion, access issue
+                        print(f"⚠️ Skip cleanup for {msg_id}: {err}")
+                        continue
+                    else:
+                        # 🔹 truly missing
+                        async with db_lock:
+                            data = load_posted()
+                            key = [chat_id, msg_id]
+                            if key in data.get("all_posts", []):
+                                data["all_posts"].remove(key)
+                                if key in data.get("forwarded", []):
+                                    data["forwarded"].remove(key)
+                                save_posted(data)
+                                removed_total += 1
+                                seen_posts.discard((chat_id, msg_id))
+                                pending_set.discard((chat_id, msg_id))
+                                print(f"🗑️ cleanup: Removed missing post {msg_id} from DB ({err})")
 
-                if not msg:
-                    async with db_lock:
-                        data = load_posted()
-                        key = [chat_id, msg_id]
-                        if key in data.get("all_posts", []):
-                            data["all_posts"].remove(key)
-                            if key in data.get("forwarded", []):
-                                data["forwarded"].remove(key)
-                            save_posted(data)
-                            removed_total += 1
-                            seen_posts.discard((chat_id, msg_id))
-                            pending_set.discard((chat_id, msg_id))
-                            print(f"🗑️ cleanup: Removed missing post {msg_id} from DB")
-
-                # throttle small amount to avoid rate-limit bursts
+                # throttle to avoid rate-limit bursts
                 if (idx + 1) % 50 == 0:
                     await asyncio.sleep(0.5)
 
