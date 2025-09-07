@@ -17,7 +17,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Direct IDs
 PRIVATE_CHANNEL_ID = -1002458215030   # Private channel ID
-PUBLIC_CHANNEL_ID = -1002469220850    # Public channel ID
+PUBLIC_CHANNEL_ID = -1002981741587    # Public channel ID
 
 # GitHub config
 GITHUB_REPO = "shree95692/random-forward-db"
