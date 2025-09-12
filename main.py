@@ -421,6 +421,7 @@ async def sync_command(client, message):
     added = 0
 
     try:
+        # Telethon client open
         async with tclient:
             async for msg in tclient.iter_messages(PRIVATE_CHANNEL_ID):
                 post_key = [msg.chat_id, msg.id]
