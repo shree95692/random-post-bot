@@ -410,6 +410,29 @@ async def test_command(client, message):
     )
 
 
+# ===================== Manual Sync Command =====================
+@client.on_message(filters.command("sync") & filters.private)
+async def sync_command(client, message):
+    await message.reply_text("⏳ Sync shuru ho rahi hai... sab purane posts check kar rahe hain.")
+    data = load_posted()
+    existing = {tuple(x) for x in data.get("all_posts", [])}
+    added = 0
+
+    try:
+        async for msg in client.get_chat_history(PRIVATE_CHANNEL_ID, limit=0):
+            post_key = [msg.chat.id, msg.id]
+            if tuple(post_key) not in existing:
+                data["all_posts"].append(post_key)
+                added += 1
+
+        if added:
+            save_posted(data)
+            await message.reply_text(f"✅ Sync complete! {added} naye posts add ho gaye DB me.")
+        else:
+            await message.reply_text("ℹ️ Sync complete — koi naya post nahi mila.")
+    except Exception as e:
+        await message.reply_text(f"❌ Sync failed: {e}")
+
 # ===================== NEW: Manual Restore Command =====================
 @client.on_message(filters.command("restore") & filters.private)
 async def restore_command(client, message):
