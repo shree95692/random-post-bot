@@ -155,6 +155,31 @@ def save_posted(data):
     upload_to_github()
 
 
+# ===================== One-time Sync Old Posts =====================
+async def sync_old_posts():
+    """
+    Scan all messages in PRIVATE_CHANNEL_ID and add any missing ones to DB.
+    Run once on startup after client.start().
+    """
+    try:
+        data = load_posted()
+        existing = set(tuple(p) for p in data.get("all_posts", []))
+
+        async for msg in client.get_chat_history(PRIVATE_CHANNEL_ID, limit=0):
+            post_key = [msg.chat.id, msg.id]
+            if tuple(post_key) not in existing:
+                data["all_posts"].append(post_key)
+
+        # Deduplicate
+        data["all_posts"] = [list(x) for x in {tuple(p) for p in data.get("all_posts", [])}]
+        data["forwarded"] = [list(x) for x in {tuple(p) for p in data.get("forwarded", [])}]
+
+        save_posted(data)
+        print(f"✅ Sync complete: {len(data['all_posts'])} posts in DB")
+
+    except Exception as e:
+        print(f"❌ sync_old_posts error: {e}")
+
 # ===================== Reliable Queue Save + Delete Handler + Cleanup =====================
 import asyncio
 
