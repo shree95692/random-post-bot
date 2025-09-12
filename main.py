@@ -444,6 +444,9 @@ async def main():
     # start pyrogram client
     await client.start()
 
+    # one-time sync of old posts
+    await sync_old_posts()
+
     # ensure webhook cleared so polling receives updates (helpful on Render)
     try:
         await client.delete_webhook(drop_pending_updates=False)
