@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 import requests
 from keep_alive import keep_alive  # For Render/Replit keep alive
+from telethon import TelegramClient   # 🔹 Add this line
 
 # === CONFIG ===
 API_ID = int(os.getenv("API_ID"))
@@ -31,6 +32,7 @@ TIMEZONE = pytz.timezone("Asia/Kolkata")
 ADMIN_ID = 5163916480  # tumhara Telegram ID
 
 client = Client("scheduled_forward_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+tclient = TelegramClient("my", API_ID, API_HASH)   # 🔹 Add this line
 POSTED_FILE = "posted.json"
 
 
