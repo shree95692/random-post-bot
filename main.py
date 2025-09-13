@@ -503,6 +503,49 @@ async def test_command(client, message):
         f"Remaining: {len([p for p in data['all_posts'] if p not in data['forwarded']])}"
     )
 
+# ===================== Manual Cleanup Command =====================
+@client.on_message(filters.command("cleanup") & filters.private)
+async def manual_cleanup_command(client, message):
+    await message.reply_text("🔎 Cleanup shuru ho rahi hai...")
+
+    try:
+        data = load_posted()
+        all_posts = data.get("all_posts", [])
+        original_count = len(all_posts)
+        still_exists = set()
+
+        # Channel se actual posts fetch karo (IDs collect karne ke liye)
+        try:
+            async for msg in client.get_chat_history(PRIVATE_CHANNEL_ID, limit=0):
+                still_exists.add((msg.chat.id, msg.id))
+        except Exception as e:
+            await message.reply_text(f"❌ Channel history read failed: {e}")
+            return
+
+        # Jo DB me hai par channel me nahi mila => remove
+        new_all = []
+        removed = 0
+        for post in all_posts:
+            if tuple(post) in still_exists:
+                new_all.append(post)
+            else:
+                removed += 1
+
+        data["all_posts"] = new_all
+
+        # forwarded list bhi clean karo
+        data["forwarded"] = [f for f in data.get("forwarded", []) if tuple(f) in still_exists]
+
+        save_posted(data)
+
+        await message.reply_text(
+            f"🧹 Cleanup complete!\n"
+            f"Total before: {original_count}\n"
+            f"Removed: {removed}\n"
+            f"Remaining: {len(new_all)}"
+        )
+    except Exception as e:
+        await message.reply_text(f"❌ Cleanup failed: {e}")
 
 # ===================== Manual Sync Command =====================
 @client.on_message(filters.command("sync") & filters.private)
