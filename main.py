@@ -290,8 +290,9 @@ async def delete_post_handler(client, messages):
             removed = 0
 
             for msg in messages:
-                post_key = [msg.chat.id, msg.id]
-                tkey = (msg.chat.id, msg.id)
+                # Always trust PRIVATE_CHANNEL_ID (delete event me chat.id kabhi unreliable hota hai)
+                post_key = [PRIVATE_CHANNEL_ID, msg.id]
+                tkey = (PRIVATE_CHANNEL_ID, msg.id)
 
                 if post_key in data.get("all_posts", []):
                     data["all_posts"].remove(post_key)
@@ -308,6 +309,7 @@ async def delete_post_handler(client, messages):
                 print(f"🗑️ Removed {removed} deleted posts from DB")
             else:
                 print("ℹ️ Delete event received, but nothing removed from DB")
+
     except Exception as e:
         print(f"❌ delete_post_handler error: {e}")
 
