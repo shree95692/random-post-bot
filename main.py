@@ -312,12 +312,12 @@ async def delete_post_handler(client, messages):
         print(f"❌ delete_post_handler error: {e}")
 
 
-# ===================== Periodic cleanup (safe mode) =====================
+# ===================== Periodic cleanup (safe mode) with Telethon fallback =====================
 async def cleanup_missing_posts(interval_minutes: int = 10):
     """
     Periodically verify saved posts still exist in source private channel.
-    Removes only truly missing ones from DB.
-    Skips deletion if access error (Peer id invalid / channel private).
+    If Pyrogram can't access a message (Peer id invalid), try Telethon (user session) fallback.
+    Only remove items from DB when we are sure message is missing, skip when access error persists.
     """
     await asyncio.sleep(5)  # small delay on startup
     while True:
@@ -327,35 +327,69 @@ async def cleanup_missing_posts(interval_minutes: int = 10):
                 all_posts_copy = list(data.get("all_posts", []))
             removed_total = 0
 
-            # iterate and check each message
             for idx, (chat_id, msg_id) in enumerate(all_posts_copy):
-                try:
-                    # attempt to fetch message; returns Message or None
-                    msg = await client.get_messages(chat_id, msg_id)
-                    if not msg:
-                        raise ValueError("Message not found")
-                except Exception as e:
-                    err = str(e)
-                    if "Peer id invalid" in err or "CHANNEL_PRIVATE" in err:
-                        # 🔹 skip deletion, access issue
-                        print(f"⚠️ Skip cleanup for {msg_id}: {err}")
-                        continue
-                    else:
-                        # 🔹 truly missing
-                        async with db_lock:
-                            data = load_posted()
-                            key = [chat_id, msg_id]
-                            if key in data.get("all_posts", []):
-                                data["all_posts"].remove(key)
-                                if key in data.get("forwarded", []):
-                                    data["forwarded"].remove(key)
-                                save_posted(data)
-                                removed_total += 1
-                                seen_posts.discard((chat_id, msg_id))
-                                pending_set.discard((chat_id, msg_id))
-                                print(f"🗑️ cleanup: Removed missing post {msg_id} from DB ({err})")
+                msg_found = None
+                err_text = None
 
-                # throttle to avoid rate-limit bursts
+                # First try Pyrogram (bot)
+                try:
+                    msg = await client.get_messages(chat_id, msg_id)
+                    if msg:
+                        msg_found = True
+                    else:
+                        msg_found = False
+                except Exception as e:
+                    err_text = str(e)
+                    # mark as not found for now; we will try Telethon fallback below
+                    msg_found = None
+
+                # If Pyrogram couldn't confirm (None) or reported not found, try Telethon fallback
+                if msg_found is None or msg_found is False:
+                    try:
+                        # Telethon fallback: only if tclient exists
+                        if 'tclient' in globals() and tclient:
+                            async with tclient:
+                                tmsg = await tclient.get_messages(chat_id, ids=msg_id)
+                                if tmsg:
+                                    msg_found = True
+                                else:
+                                    msg_found = False
+                        else:
+                            # no telethon available, keep previous err_text
+                            if msg_found is None:
+                                # Pyrogram raised some error
+                                pass
+                    except Exception as te:
+                        # Telethon also failed — capture text
+                        err_text = err_text or str(te)
+                        msg_found = None
+
+                # Decide action:
+                # - If msg_found == True => exists, keep it
+                # - If msg_found == False => definitely missing -> remove from DB
+                # - If msg_found is None => access/unknown -> skip deletion (avoid false remove)
+                if msg_found is False:
+                    async with db_lock:
+                        data = load_posted()
+                        key = [chat_id, msg_id]
+                        if key in data.get("all_posts", []):
+                            data["all_posts"].remove(key)
+                            if key in data.get("forwarded", []):
+                                data["forwarded"].remove(key)
+                            save_posted(data)
+                            removed_total += 1
+                            seen_posts.discard((chat_id, msg_id))
+                            pending_set.discard((chat_id, msg_id))
+                            print(f"🗑️ cleanup: Removed missing post {msg_id} from DB ({err_text})")
+                else:
+                    if msg_found is None:
+                        # skip due to access error (Peer id invalid etc.)
+                        print(f"⚠️ Skip cleanup for {msg_id}: access unknown ({err_text})")
+                    else:
+                        # exists
+                        pass
+
+                # throttle small amount to avoid rate-limit bursts
                 if (idx + 1) % 50 == 0:
                     await asyncio.sleep(0.5)
 
@@ -367,7 +401,6 @@ async def cleanup_missing_posts(interval_minutes: int = 10):
         except Exception as e:
             print(f"❌ cleanup_missing_posts error: {e}")
 
-        # sleep until next run
         await asyncio.sleep(interval_minutes * 60)
 
 # ===================== Scheduled Forward =====================
