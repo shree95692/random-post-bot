@@ -514,15 +514,16 @@ async def manual_cleanup_command(client, message):
         original_count = len(all_posts)
         still_exists = set()
 
-        # Channel se actual posts fetch karo (IDs collect karne ke liye)
+        # Telethon se channel history fetch
         try:
-            async for msg in client.get_chat_history(PRIVATE_CHANNEL_ID, limit=0):
-                still_exists.add((msg.chat.id, msg.id))
+            async with tclient:
+                async for msg in tclient.iter_messages(PRIVATE_CHANNEL_ID):
+                    still_exists.add((PRIVATE_CHANNEL_ID, msg.id))
         except Exception as e:
-            await message.reply_text(f"❌ Channel history read failed: {e}")
+            await message.reply_text(f"❌ Telethon history read failed: {e}")
             return
 
-        # Jo DB me hai par channel me nahi mila => remove
+        # Compare & remove missing
         new_all = []
         removed = 0
         for post in all_posts:
@@ -532,8 +533,6 @@ async def manual_cleanup_command(client, message):
                 removed += 1
 
         data["all_posts"] = new_all
-
-        # forwarded list bhi clean karo
         data["forwarded"] = [f for f in data.get("forwarded", []) if tuple(f) in still_exists]
 
         save_posted(data)
