@@ -313,7 +313,34 @@ async def delete_post_handler(client, messages):
     except Exception as e:
         print(f"❌ delete_post_handler error: {e}")
 
+# ===================== Telethon Delete Watcher =====================
+from telethon import events
 
+@tclient.on(events.MessageDeleted(chats=PRIVATE_CHANNEL_ID))
+async def telethon_delete_handler(event):
+    try:
+        async with db_lock:
+            data = load_posted()
+            removed = 0
+            for msg_id in event.deleted_ids:
+                post_key = [PRIVATE_CHANNEL_ID, msg_id]
+                tkey = (PRIVATE_CHANNEL_ID, msg_id)
+
+                if post_key in data.get("all_posts", []):
+                    data["all_posts"].remove(post_key)
+                    removed += 1
+                if post_key in data.get("forwarded", []):
+                    data["forwarded"].remove(post_key)
+
+                seen_posts.discard(tkey)
+                pending_set.discard(tkey)
+
+            if removed > 0:
+                save_posted(data)
+                print(f"🗑️ Telethon: Removed {removed} deleted posts from DB")
+    except Exception as e:
+        print(f"❌ telethon_delete_handler error: {e}")
+        
 # ===================== Periodic cleanup (safe mode) with Telethon fallback =====================
 async def cleanup_missing_posts(interval_minutes: int = 10):
     """
@@ -535,6 +562,9 @@ async def main():
 
     # start pyrogram client
     await client.start()
+    
+    # start telethon client
+    await tclient.start()
 
     # one-time sync of old posts
     await sync_old_posts()
