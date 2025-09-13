@@ -283,25 +283,33 @@ async def save_new_post(client, message):
 # ===================== Delete Handler =====================
 @client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
 async def delete_post_handler(client, messages):
-    """Try to remove deleted messages from DB when Telegram sends delete events."""
-    async with db_lock:
-        data = load_posted()
-        removed = 0
-        for msg in messages:
-            post_key = [msg.chat.id, msg.id]
-            tkey = (msg.chat.id, msg.id)
-            if post_key in data.get("all_posts", []):
-                data["all_posts"].remove(post_key)
-                removed += 1
-            if post_key in data.get("forwarded", []):
-                data["forwarded"].remove(post_key)
-            # also update in-memory sets
-            seen_posts.discard(tkey)
-            pending_set.discard(tkey)
+    """Remove deleted messages from DB when Telegram sends delete events."""
+    try:
+        async with db_lock:
+            data = load_posted()
+            removed = 0
 
-        if removed > 0:
-            save_posted(data)
-            print(f"🗑️ Removed {removed} deleted posts from DB")
+            for msg in messages:
+                post_key = [msg.chat.id, msg.id]
+                tkey = (msg.chat.id, msg.id)
+
+                if post_key in data.get("all_posts", []):
+                    data["all_posts"].remove(post_key)
+                    removed += 1
+                if post_key in data.get("forwarded", []):
+                    data["forwarded"].remove(post_key)
+
+                # in-memory cleanup
+                seen_posts.discard(tkey)
+                pending_set.discard(tkey)
+
+            if removed > 0:
+                save_posted(data)
+                print(f"🗑️ Removed {removed} deleted posts from DB")
+            else:
+                print("ℹ️ Delete event received, but nothing removed from DB")
+    except Exception as e:
+        print(f"❌ delete_post_handler error: {e}")
 
 
 # ===================== Periodic cleanup (safe mode) =====================
@@ -505,8 +513,8 @@ async def main():
 
     # start background workers
     asyncio.create_task(queue_worker())
-    asyncio.create_task(cleanup_missing_posts())   # runs every 10 minutes by default
-
+    asyncio.create_task(cleanup_missing_posts(interval_minutes=10))   # check हर 10 min
+    
     print("✅ Bot started and scheduler loaded!")
 
     # scheduler jobs
