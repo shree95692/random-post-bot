@@ -16,9 +16,20 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Direct IDs
-PRIVATE_CHANNEL_ID = -1002458215030   # Private channel ID
-PUBLIC_CHANNEL_ID = -1002981741587    # Public channel ID
+# Channel mapping file (channels.json) use karenge
+CHANNELS_FILE = "channels.json"
+
+def load_channels():
+    if os.path.exists(CHANNELS_FILE):
+        with open(CHANNELS_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_channels(channels):
+    with open(CHANNELS_FILE, "w") as f:
+        json.dump(channels, f, indent=4)
+
+CHANNELS = load_channels()   # List of dicts: {"source": id, "target": id, "batch": 10}
 
 # GitHub config
 GITHUB_REPO = "shree95692/random-forward-db"
