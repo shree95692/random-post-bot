@@ -518,13 +518,36 @@ async def postnow_command(client, message):
 @client.on_message(filters.command("test") & filters.private)
 async def test_command(client, message):
     data = load_posted()
-    await message.reply_text(
-        f"📊 Database Status:\n"
-        f"Total saved posts: {len(data['all_posts'])}\n"
-        f"Already forwarded: {len(data['forwarded'])}\n"
-        f"Remaining: {len([p for p in data['all_posts'] if p not in data['forwarded']])}"
-    )
+    channels = load_channels()
 
+    lines = ["📊 Database Status:"]
+    total_all = len(data["all_posts"])
+    total_forwarded = len(data["forwarded"])
+    total_remaining = len([p for p in data["all_posts"] if p not in data["forwarded"]])
+
+    # overall
+    lines.append(f"🌐 Total saved posts: {total_all}")
+    lines.append(f"➡️ Already forwarded: {total_forwarded}")
+    lines.append(f"⏳ Remaining: {total_remaining}")
+    lines.append("")
+
+    # per-channel breakdown
+    for ch in channels:
+        source = ch["source"]
+        target = ch["target"]
+
+        all_posts = [p for p in data["all_posts"] if p[0] == source]
+        already_forwarded = [p for p in data["forwarded"] if p[0] == source]
+        remaining = [p for p in all_posts if p not in already_forwarded]
+
+        lines.append(f"📡 Source: `{source}` → Target: `{target}`")
+        lines.append(f"   • Saved: {len(all_posts)}")
+        lines.append(f"   • Forwarded: {len(already_forwarded)}")
+        lines.append(f"   • Remaining: {len(remaining)}")
+        lines.append("")
+
+    await message.reply_text("\n".join(lines))
+    
 # ===================== Manual Cleanup Command =====================
 @client.on_message(filters.command("cleanup") & filters.private)
 async def manual_cleanup_command(client, message):
