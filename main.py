@@ -272,7 +272,7 @@ async def queue_worker():
             await asyncio.sleep(1)
 
 
-@client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
+@client.on_message()
 async def save_new_post(client, message):
     """Just enqueue incoming posts — worker will persist them."""
     post_key = (message.chat.id, message.id)
@@ -292,7 +292,7 @@ async def save_new_post(client, message):
 
 
 # ===================== Delete Handler =====================
-@client.on_deleted_messages(filters.chat(PRIVATE_CHANNEL_ID))
+@client.on_deleted_messages()
 async def delete_post_handler(client, messages):
     """Remove deleted messages from DB when Telegram sends delete events."""
     try:
