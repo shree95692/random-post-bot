@@ -594,23 +594,29 @@ async def manual_cleanup_command(client, message):
 # ===================== Manual Sync Command =====================
 @client.on_message(filters.command("sync") & filters.private)
 async def sync_command(client, message):
-    await message.reply_text("⏳ Sync shuru ho rahi hai... sab purane posts check kar rahe hain.")
+    await message.reply_text("⏳ Multi-channel sync shuru ho rahi hai... sab purane posts check kar rahe hain.")
     data = load_posted()
     existing = {tuple(x) for x in data.get("all_posts", [])}
-    added = 0
+    added_total = 0
 
     try:
-        # Telethon client open
+        channels = load_channels()
         async with tclient:
-            async for msg in tclient.iter_messages(PRIVATE_CHANNEL_ID):
-                post_key = [msg.chat_id, msg.id]
-                if tuple(post_key) not in existing:
-                    data["all_posts"].append(post_key)
-                    added += 1
+            for ch in channels:
+                source = ch["source"]
+                added = 0
+                async for msg in tclient.iter_messages(source):
+                    post_key = [source, msg.id]
+                    if tuple(post_key) not in existing:
+                        data["all_posts"].append(post_key)
+                        existing.add(tuple(post_key))
+                        added += 1
+                        added_total += 1
+                print(f"✅ Sync: {added} new posts added from {source}")
 
-        if added:
+        if added_total:
             save_posted(data)
-            await message.reply_text(f"✅ Sync complete! {added} naye posts add ho gaye DB me.")
+            await message.reply_text(f"✅ Sync complete! {added_total} naye posts add ho gaye DB me.")
         else:
             await message.reply_text("ℹ️ Sync complete — koi naya post nahi mila.")
     except Exception as e:
