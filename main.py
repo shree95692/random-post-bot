@@ -274,7 +274,11 @@ async def queue_worker():
 
 @client.on_message()
 async def save_new_post(client, message):
-    """Just enqueue incoming posts — worker will persist them."""
+    """Save only if message is from a configured source channel."""
+    sources = [ch["source"] for ch in load_channels()]
+    if message.chat.id not in sources:
+        return
+
     post_key = (message.chat.id, message.id)
 
     # fast in-memory checks to avoid disk I/O and duplicate enqueue
@@ -288,8 +292,7 @@ async def save_new_post(client, message):
     # enqueue
     pending_set.add(post_key)
     await save_queue.put(post_key)
-    print(f"📥 Enqueued new post {message.id}")
-
+    print(f"📥 Enqueued new post {message.id} from {message.chat.id}")
 
 # ===================== Delete Handler =====================
 @client.on_deleted_messages()
