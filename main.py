@@ -294,19 +294,22 @@ async def save_new_post(client, message):
     await save_queue.put(post_key)
     print(f"📥 Enqueued new post {message.id} from {message.chat.id}")
 
-# ===================== Delete Handler =====================
+# ===================== Delete Handler (multi-channel) =====================
 @client.on_deleted_messages()
 async def delete_post_handler(client, messages):
-    """Remove deleted messages from DB when Telegram sends delete events."""
+    """Remove deleted messages from DB when Telegram sends delete events (multi-channel)."""
     try:
+        sources = [ch["source"] for ch in load_channels()]
         async with db_lock:
             data = load_posted()
             removed = 0
 
             for msg in messages:
-                # Always trust PRIVATE_CHANNEL_ID (delete event me chat.id kabhi unreliable hota hai)
-                post_key = [PRIVATE_CHANNEL_ID, msg.id]
-                tkey = (PRIVATE_CHANNEL_ID, msg.id)
+                if msg.chat.id not in sources:
+                    continue
+
+                post_key = [msg.chat.id, msg.id]
+                tkey = (msg.chat.id, msg.id)
 
                 if post_key in data.get("all_posts", []):
                     data["all_posts"].remove(post_key)
@@ -323,7 +326,6 @@ async def delete_post_handler(client, messages):
                 print(f"🗑️ Removed {removed} deleted posts from DB")
             else:
                 print("ℹ️ Delete event received, but nothing removed from DB")
-
     except Exception as e:
         print(f"❌ delete_post_handler error: {e}")
 
