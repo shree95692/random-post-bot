@@ -454,29 +454,32 @@ async def forward_scheduled_posts(user_id=None):
     data = load_posted()
     channels = load_channels()
 
-    for ch in channels:
-        source = ch["source"]
-        target = ch["target"]
-        posts_per_batch = ch.get("posts_per_batch", POSTS_PER_BATCH)
+    all_posts = data["all_posts"]
+    already_forwarded = data["forwarded"]
 
-        all_posts = [p for p in data["all_posts"] if p[0] == source]
-        already_forwarded = [p for p in data["forwarded"] if p[0] == source]
+    remaining = [post for post in all_posts if post not in already_forwarded]
 
-        remaining = [post for post in all_posts if post not in already_forwarded]
+    if not remaining:
+        print("✅ All posts forwarded once. Resetting cycle.")
+        data["forwarded"] = []
+        save_posted(data)
+        remaining = all_posts
 
-        if not remaining:
-            print(f"✅ All posts from {source} forwarded once. Resetting cycle.")
-            data["forwarded"] = [p for p in data["forwarded"] if p[0] != source]
-            save_posted(data)
-            remaining = all_posts
+    if not remaining:
+        print("⚠️ No posts available to forward yet.")
+        return
 
-        if not remaining:
-            print(f"⚠️ No posts available to forward yet for {source}.")
+    # random sample
+    selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
+
+    for chat_id, msg_id in selected:
+        # find matching target channel
+        target_channels = [ch["target"] for ch in channels if ch["source"] == chat_id]
+        if not target_channels:
+            print(f"⚠️ No target found for source {chat_id}, skipping {msg_id}")
             continue
 
-        selected = random.sample(remaining, min(posts_per_batch, len(remaining)))
-
-        for chat_id, msg_id in selected:
+        for target in target_channels:
             try:
                 await client.copy_message(
                     chat_id=target,
@@ -484,9 +487,9 @@ async def forward_scheduled_posts(user_id=None):
                     message_id=msg_id
                 )
                 data["forwarded"].append([chat_id, msg_id])
-                print(f"✅ Forwarded message {msg_id} from {source} to {target}")
+                print(f"✅ Forwarded {msg_id} from {chat_id} → {target}")
             except Exception as e:
-                error_text = f"❌ Failed to forward message {msg_id} from {source} to {target}: {e}"
+                error_text = f"❌ Failed to forward {msg_id} from {chat_id} → {target}: {e}"
                 print(error_text)
                 await send_alert(error_text)
                 if user_id:
@@ -496,7 +499,6 @@ async def forward_scheduled_posts(user_id=None):
                         pass
 
     save_posted(data)
-
 
 # ===================== Commands =====================
 @client.on_message(filters.command("start") & filters.private)
