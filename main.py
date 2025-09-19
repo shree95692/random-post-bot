@@ -448,46 +448,52 @@ async def cleanup_missing_posts(interval_minutes: int = 10):
 
         await asyncio.sleep(interval_minutes * 60)
 
-# ===================== Scheduled Forward =====================
+# ===================== Scheduled Forward (multi-channel) =====================
 async def forward_scheduled_posts(user_id=None):
     print(f"[{datetime.now()}] ⏳ Running scheduled forward job...")
     data = load_posted()
+    channels = load_channels()
 
-    all_posts = data["all_posts"]
-    already_forwarded = data["forwarded"]
+    for ch in channels:
+        source = ch["source"]
+        target = ch["target"]
+        posts_per_batch = ch.get("posts_per_batch", POSTS_PER_BATCH)
 
-    remaining = [post for post in all_posts if post not in already_forwarded]
+        all_posts = [p for p in data["all_posts"] if p[0] == source]
+        already_forwarded = [p for p in data["forwarded"] if p[0] == source]
 
-    if not remaining:
-        print("✅ All posts forwarded once. Resetting cycle.")
-        data["forwarded"] = []
-        save_posted(data)
-        remaining = all_posts
+        remaining = [post for post in all_posts if post not in already_forwarded]
 
-    if not remaining:
-        print("⚠️ No posts available to forward yet.")
-        return
+        if not remaining:
+            print(f"✅ All posts from {source} forwarded once. Resetting cycle.")
+            data["forwarded"] = [p for p in data["forwarded"] if p[0] != source]
+            save_posted(data)
+            remaining = all_posts
 
-    selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
+        if not remaining:
+            print(f"⚠️ No posts available to forward yet for {source}.")
+            continue
 
-    for chat_id, msg_id in selected:
-        try:
-            await client.copy_message(
-                chat_id=PUBLIC_CHANNEL_ID,
-                from_chat_id=chat_id,
-                message_id=msg_id
-            )
-            data["forwarded"].append([chat_id, msg_id])
-            print(f"✅ Forwarded message {msg_id}")
-        except Exception as e:
-            error_text = f"❌ Failed to forward message {msg_id}: {e}"
-            print(error_text)
-            await send_alert(error_text)
-            if user_id:
-                try:
-                    await client.send_message(user_id, error_text)
-                except:
-                    pass
+        selected = random.sample(remaining, min(posts_per_batch, len(remaining)))
+
+        for chat_id, msg_id in selected:
+            try:
+                await client.copy_message(
+                    chat_id=target,
+                    from_chat_id=chat_id,
+                    message_id=msg_id
+                )
+                data["forwarded"].append([chat_id, msg_id])
+                print(f"✅ Forwarded message {msg_id} from {source} to {target}")
+            except Exception as e:
+                error_text = f"❌ Failed to forward message {msg_id} from {source} to {target}: {e}"
+                print(error_text)
+                await send_alert(error_text)
+                if user_id:
+                    try:
+                        await client.send_message(user_id, error_text)
+                    except:
+                        pass
 
     save_posted(data)
 
