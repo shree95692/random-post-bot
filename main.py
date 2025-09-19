@@ -613,11 +613,9 @@ async def main():
     seen_posts.update({tuple(x) for x in data.get("all_posts", [])})
     pending_set.clear()
 
-    # start pyrogram client
+    # start pyrogram + telethon client
     await client.start()
-    
-    # start telethon client
-    await tclient.start()
+    await tclient.start()   # 🔹 user session bhi start hoga
 
     # one-time sync of old posts
     await sync_old_posts()
