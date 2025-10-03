@@ -25,7 +25,7 @@ GITHUB_REPO = "shree95692/random-forward-db"
 GITHUB_FILE = "posted.json"
 GITHUB_PAT = os.getenv("GITHUB_PAT")  # PAT env me rakho
 
-POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 10))
+POSTS_PER_BATCH = int(os.getenv("POSTS_PER_BATCH", 15))
 TIMEZONE = pytz.timezone("Asia/Kolkata")
 
 # Admin alerts
