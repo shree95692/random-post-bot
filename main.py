@@ -625,6 +625,7 @@ async def main():
     # scheduler jobs
     scheduler = AsyncIOScheduler(timezone=TIMEZONE)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=10, minute=0)
+    scheduler.add_job(forward_scheduled_posts, "cron", hour=15, minute=28)
     scheduler.add_job(forward_scheduled_posts, "cron", hour=23, minute=0)
     scheduler.start()
 
