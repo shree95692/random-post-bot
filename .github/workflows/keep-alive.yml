@@ -2,13 +2,14 @@ name: Keep Render Alive
 
 on:
   schedule:
-    - cron: "*/10 * * * *"
-  workflow_dispatch:
+    - cron: "*/10 * * * *"   # har 10 minute me chalega
+  workflow_dispatch:          # manually run karne ka option bhi rahega
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Send keep-alive ping
-        run: |
-          curl -s https://random-post-bot.onrender.com > /dev/null
+      - name: Install curl
+        run: sudo apt-get update && sudo apt-get install -y curl
+      - name: Send keep-alive ping to Render
+        run: curl -s https://random-post-bot.onrender.com > /dev/null
