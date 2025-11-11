@@ -156,27 +156,7 @@ def save_posted(data):
 
     upload_to_github()
 
-# ----------------- channels loader -----------------
-def load_channels():
-    """
-    Returns list of channel configs from channels.json
-    Expected format in channels.json:
-    {
-      "channels": [
-        { "id": -100123..., "target": -100456..., "posts_per_batch": 10, "active": true },
-        ...
-      ]
-    }
-    """
-    try:
-        if not os.path.exists("channels.json"):
-            return []
-        with open("channels.json", "r") as f:
-            j = json.load(f)
-        return j.get("channels", []) if isinstance(j, dict) else []
-    except Exception as e:
-        print(f"⚠️ load_channels error: {e}")
-        return []
+
 # ===================== One-time Sync Old Posts (Telethon + fallback) =====================
 async def sync_old_posts():
     """
@@ -281,38 +261,23 @@ async def queue_worker():
             await asyncio.sleep(1)
 
 
-@client.on_message()
-async def incoming_handler(client, message):
-    """
-    Generic incoming message handler — accepts messages only from sources listed in channels.json.
-    It enqueues messages for persistence.
-    """
-    try:
-        channels = load_channels()
-        if not channels:
-            return
+@client.on_message(filters.chat(PRIVATE_CHANNEL_ID))
+async def save_new_post(client, message):
+    """Just enqueue incoming posts — worker will persist them."""
+    post_key = (message.chat.id, message.id)
 
-        # active source ids set
-        source_ids = {ch["id"] for ch in channels if ch.get("active", True)}
-        if message.chat.id not in source_ids:
-            return
+    # fast in-memory checks to avoid disk I/O and duplicate enqueue
+    if post_key in seen_posts:
+        print(f"ℹ️ Post {message.id} already in DB, skipping enqueue.")
+        return
+    if post_key in pending_set:
+        print(f"ℹ️ Post {message.id} already queued, skipping duplicate.")
+        return
 
-        # enqueue logic (same as before)
-        post_key = (message.chat.id, message.id)
-
-        if post_key in seen_posts:
-            print(f"ℹ️ Post {message.id} already in DB, skipping enqueue.")
-            return
-        if post_key in pending_set:
-            print(f"ℹ️ Post {message.id} already queued, skipping duplicate.")
-            return
-
-        pending_set.add(post_key)
-        await save_queue.put(post_key)
-        print(f"📥 Enqueued new post {message.id} from {message.chat.id}")
-
-    except Exception as e:
-        print(f"❌ incoming_handler error: {e}")
+    # enqueue
+    pending_set.add(post_key)
+    await save_queue.put(post_key)
+    print(f"📥 Enqueued new post {message.id}")
 
 
 # ===================== Delete Handler =====================
