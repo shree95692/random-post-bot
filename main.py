@@ -156,7 +156,27 @@ def save_posted(data):
 
     upload_to_github()
 
-
+# ----------------- channels loader -----------------
+def load_channels():
+    """
+    Returns list of channel configs from channels.json
+    Expected format in channels.json:
+    {
+      "channels": [
+        { "id": -100123..., "target": -100456..., "posts_per_batch": 10, "active": true },
+        ...
+      ]
+    }
+    """
+    try:
+        if not os.path.exists("channels.json"):
+            return []
+        with open("channels.json", "r") as f:
+            j = json.load(f)
+        return j.get("channels", []) if isinstance(j, dict) else []
+    except Exception as e:
+        print(f"⚠️ load_channels error: {e}")
+        return []
 # ===================== One-time Sync Old Posts (Telethon + fallback) =====================
 async def sync_old_posts():
     """
