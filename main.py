@@ -477,9 +477,9 @@ async def forward_scheduled_posts(user_id=None):
         print("⚠️ No posts available to forward yet.")
         return
 
-    selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
+selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
 
-for chat_id, msg_id in selected:
+    for chat_id, msg_id in selected:
         try:
             ok = await safe_forward_once(client, tclient, chat_id, msg_id, PUBLIC_CHANNEL_ID)
             if ok:
@@ -505,7 +505,6 @@ for chat_id, msg_id in selected:
                     pass
 
     save_posted(data)
-
 
 # ===================== Commands =====================
 @client.on_message(filters.command("start") & filters.private)
