@@ -477,7 +477,7 @@ async def forward_scheduled_posts(user_id=None):
         print("⚠️ No posts available to forward yet.")
         return
 
-selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
+    selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
 
     for chat_id, msg_id in selected:
         try:
