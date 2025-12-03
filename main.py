@@ -479,21 +479,21 @@ async def forward_scheduled_posts(user_id=None):
 
     selected = random.sample(remaining, min(POSTS_PER_BATCH, len(remaining)))
 
-    for chat_id, msg_id in selected:
+for chat_id, msg_id in selected:
         try:
             ok = await safe_forward_once(client, tclient, chat_id, msg_id, PUBLIC_CHANNEL_ID)
-if ok:
-    data["forwarded"].append([chat_id, msg_id])
-    print(f"✅ Forwarded message {msg_id}")
-else:
-    error_text = f"❌ Failed to forward message {msg_id}"
-    print(error_text)
-    await send_alert(error_text)
-    if user_id:
-        try:
-            await client.send_message(user_id, error_text)
-        except:
-            pass
+            if ok:
+                data["forwarded"].append([chat_id, msg_id])
+                print(f"✅ Forwarded message {msg_id}")
+            else:
+                error_text = f"❌ Failed to forward message {msg_id}"
+                print(error_text)
+                await send_alert(error_text)
+                if user_id:
+                    try:
+                        await client.send_message(user_id, error_text)
+                    except:
+                        pass
         except Exception as e:
             error_text = f"❌ Failed to forward message {msg_id}: {e}"
             print(error_text)
@@ -633,13 +633,14 @@ async def main():
     seen_posts.update({tuple(x) for x in data.get("all_posts", [])})
     pending_set.clear()
 
-    # start pyrogram + telethon client
+# start pyrogram + telethon client
     await client.start()
     await tclient.start()   # 🔹 user session bhi start hoga
+    # try a tiny pre-resolve of target channel so first forward likely succeeds
     try:
-    await client.get_chat(PUBLIC_CHANNEL_ID)
-except:
-    pass
+        await client.get_chat(PUBLIC_CHANNEL_ID)
+    except Exception:
+        pass
 
     # one-time sync of old posts
     await sync_old_posts()
